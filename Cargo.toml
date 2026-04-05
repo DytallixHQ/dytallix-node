@@ -1,0 +1,8 @@
+[workspace]
+members = [
+    "pqc-crypto",
+    "smart-contracts",
+    "blockchain-core",
+    "dytallix-fast-launch/node",
+]
+resolver = "2"
