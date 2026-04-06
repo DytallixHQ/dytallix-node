@@ -1,30 +1,94 @@
 # Dytallix Node
 
-Source for the live Dytallix testnet node and its local path dependencies.
+Public node, RPC, and backend source for the Dytallix testnet.
 
-This repository was packaged from the running testnet server on April 5, 2026 so the public chain backend is no longer stranded on a single machine. It includes the server-side fix that makes the public signed transaction API usable end to end:
+This repository is a source snapshot packaged from the running Dytallix testnet
+server on April 5, 2026 so the public chain backend is no longer stranded on a
+single machine.
+
+## Quick Links
+
+- [Docs hub](docs/README.md)
+- [Repository map](docs/repository-map.md)
+- [Build and run](docs/build-and-run.md)
+- [RPC and API docs](docs/rpc-and-apis.md)
+- [FAQ](docs/faq.md)
+- [Fast node RPC reference](dytallix-fast-launch/node/README_RPC.md)
+- [PQC implementation](dytallix-fast-launch/node/PQC_IMPLEMENTATION.md)
+- [Secrets management](blockchain-core/SECRETS_README.md)
+- [PulseGuard API draft](blockchain-core/src/risk/pulseguard/api/OPENAPI.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
+- [Changelog](CHANGELOG.md)
+- [License](LICENSE)
+
+## What This Repository Contains
+
+The workspace is split into four main packages:
+
+- [`dytallix-fast-launch/node`](dytallix-fast-launch/node) - public RPC node and execution engine
+- [`blockchain-core`](blockchain-core) - shared chain logic, consensus, secrets, risk, and runtime code
+- [`pqc-crypto`](pqc-crypto) - post-quantum cryptography primitives and CLI tools
+- [`smart-contracts`](smart-contracts) - contract runtime, bridges, and examples
+
+See [Repository map](docs/repository-map.md) for the package names, binaries,
+and notable subpaths.
+
+## Why This Snapshot Matters
+
+This published tree includes the server-side fixes that make the public signed
+transaction path usable end to end:
 
 - signed ML-DSA-65 transactions are accepted by the live node
 - the signed `fee` field is converted into execution gas at submit time
 - `/status` exposes public gas parameters for SDK and CLI fee estimation
 
-## Layout
+## Build Quickstart
 
-- `dytallix-fast-launch/node`: public RPC node and execution engine
-- `blockchain-core`: shared chain logic used by the node
-- `pqc-crypto`: post-quantum crypto primitives and CLIs
-- `smart-contracts`: Dytallix contract runtime and examples
-
-## Build
-
-Build the public node from its crate directory:
+Build the full workspace:
 
 ```bash
-cd dytallix-fast-launch/node
-cargo build --release --locked
+cargo build --workspace --locked
 ```
 
-## Notes
+Build the public RPC node:
 
-- This is a cleaned source snapshot. Runtime data, RocksDB files, launch evidence, local keys, Finder metadata, and temporary backup artifacts were intentionally excluded.
-- `pqc-crypto` referenced a missing local dev dependency on the server (`../interoperability`). That dev-only dependency was removed here so the published tree builds cleanly.
+```bash
+cargo build -p dytallix-fast-node --bin dytallix-fast-node --release --locked
+```
+
+Run the public RPC node locally:
+
+```bash
+cargo run -p dytallix-fast-node --bin dytallix-fast-node --release
+```
+
+See [Build and run](docs/build-and-run.md) for crate-specific commands and
+entrypoints.
+
+## Public API Surfaces
+
+The main API and protocol references are already in the repository:
+
+- [Fast node RPC reference](dytallix-fast-launch/node/README_RPC.md)
+- [PulseGuard API draft](blockchain-core/src/risk/pulseguard/api/OPENAPI.md)
+- [PQC implementation notes](dytallix-fast-launch/node/PQC_IMPLEMENTATION.md)
+- [Secrets management guide](blockchain-core/SECRETS_README.md)
+
+The shorter repo-level summary is in [RPC and API docs](docs/rpc-and-apis.md).
+
+## Snapshot Notes
+
+- This is a cleaned source snapshot. Runtime data, RocksDB files, launch
+  evidence, local keys, Finder metadata, and temporary backup artifacts were
+  intentionally excluded.
+- `pqc-crypto` referenced a missing local dev dependency on the server
+  (`../interoperability`). That dev-only dependency was removed here so the
+  published tree builds cleanly.
+
+## Related Repositories
+
+- [dytallix-sdk](https://github.com/DytallixHQ/dytallix-sdk)
+- [dytallix-explorer](https://github.com/DytallixHQ/dytallix-explorer)
+- [dytallix-faucet](https://github.com/DytallixHQ/dytallix-faucet)
+- [DytallixHQ](https://github.com/DytallixHQ)

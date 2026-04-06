@@ -1,5 +1,7 @@
 # Dytallix Lean Launch RPC
 
+[Docs hub](../../docs/README.md) | [Build and run](../../docs/build-and-run.md) | [RPC and API docs](../../docs/rpc-and-apis.md)
+
 > Note: Dual-token model active. Upstream tooling (dcli) enforces denoms `DGT` (governance/stake) and `DRT` (rewards). Future RPC endpoints will expose governance/staking modules using DGT.
 
 Status: MV(T) + Persistent Storage + Background Block Producer

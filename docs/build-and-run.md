@@ -1,0 +1,92 @@
+# Build And Run
+
+[Docs hub](README.md) | [Repository map](repository-map.md) | [FAQ](faq.md)
+
+## Workspace Build
+
+Build everything in the repository:
+
+```bash
+cargo build --workspace --locked
+```
+
+Format the workspace:
+
+```bash
+cargo fmt --all
+```
+
+Run tests:
+
+```bash
+cargo test --workspace --locked
+```
+
+For focused changes in this large workspace, it is reasonable to run the most
+relevant crate or test target and document that scope in the PR.
+
+## Public RPC Node
+
+Build the public RPC node:
+
+```bash
+cargo build -p dytallix-fast-node --bin dytallix-fast-node --release --locked
+```
+
+Run it:
+
+```bash
+cargo run -p dytallix-fast-node --bin dytallix-fast-node --release
+```
+
+The deeper runtime and endpoint notes live in
+[Fast node RPC reference](../dytallix-fast-launch/node/README_RPC.md).
+
+## Core Node
+
+Build the core chain binary:
+
+```bash
+cargo build -p dytallix-node --bin dytallix-node --release --locked
+```
+
+Build the bridge server:
+
+```bash
+cargo build -p dytallix-node --bin bridge-server --release --locked
+```
+
+## PQC Utilities
+
+Build the PQC CLI tools:
+
+```bash
+cargo build -p dytallix-pqc --release --locked
+```
+
+The package provides CLI binaries for key generation, raw key export, signing,
+verification, and evidence generation:
+
+- [`keygen`](../pqc-crypto/src/bin/keygen.rs)
+- [`keygen_raw`](../pqc-crypto/src/bin/keygen_raw.rs)
+- [`pqc_evidence`](../pqc-crypto/src/bin/pqc_evidence.rs)
+- [`sign`](../pqc-crypto/src/bin/sign.rs)
+- [`verify`](../pqc-crypto/src/bin/verify.rs)
+
+## Smart Contracts
+
+Build the contracts package:
+
+```bash
+cargo build -p dytallix-contracts --release --locked
+```
+
+See the example contract in
+[`smart-contracts/examples/counter`](../smart-contracts/examples/counter).
+
+## Operational References
+
+- [Fast node RPC reference](../dytallix-fast-launch/node/README_RPC.md)
+- [PQC implementation](../dytallix-fast-launch/node/PQC_IMPLEMENTATION.md)
+- [Secrets management](../blockchain-core/SECRETS_README.md)
+- [PulseGuard API draft](../blockchain-core/src/risk/pulseguard/api/OPENAPI.md)

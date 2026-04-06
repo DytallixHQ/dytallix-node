@@ -1,5 +1,7 @@
 # Dytallix Secrets Management System
 
+[Docs hub](../docs/README.md) | [Repository map](../docs/repository-map.md) | [Build and run](../docs/build-and-run.md)
+
 A pluggable secrets loading abstraction that provides secure, configurable access to secrets from multiple sources with easy migration path to production secret managers.
 
 ## Overview
