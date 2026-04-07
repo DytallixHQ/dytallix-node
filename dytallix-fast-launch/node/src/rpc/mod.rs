@@ -17,7 +17,7 @@ fn current_timestamp() -> u64 {
 use crate::storage::oracle::OracleStore;
 use crate::types::{Msg, SignedTx, ValidationError};
 use crate::{
-    mempool::{basic_validate, Mempool},
+    mempool::Mempool,
     state::State,
     storage::blocks::TpsWindow,
     storage::{receipts::TxReceipt, state::Storage, tx::Transaction},
@@ -27,8 +27,6 @@ use axum::{
     extract::{Path, Query},
     Extension, Json,
 };
-#[cfg(feature = "contracts")]
-use base64::Engine;
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::HashMap;
@@ -43,7 +41,10 @@ pub mod errors; // restored errors module export
 #[cfg(feature = "contracts")]
 pub mod contracts;
 #[cfg(feature = "contracts")]
-pub use contracts::{contracts_deploy, contracts_call, contracts_state};
+pub use contracts::{
+    contract_events, contract_info, contract_query, contracts_call, contracts_deploy,
+    contracts_state,
+};
 #[cfg(feature = "oracle")]
 pub mod oracle;
 
@@ -1351,12 +1352,34 @@ pub async fn gov_get_total_voting_power(
 pub async fn list_contracts(
     Extension(ctx): Extension<RpcContext>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    #[cfg(feature = "contracts")]
+    {
+        let contracts = ctx.wasm_runtime.list_contracts();
+        let items: Vec<_> = contracts
+            .into_iter()
+            .map(|deployment| {
+                json!({
+                    "address": deployment.address,
+                    "code_hash": deployment.code_hash,
+                    "code_size": deployment.code.len(),
+                    "tx_hash": deployment.tx_hash,
+                    "gas_used": deployment.gas_used,
+                    "deployed_at": deployment.deployed_at,
+                })
+            })
+            .collect();
+        return Ok(Json(json!({ "contracts": items })));
+    }
+
+    #[cfg(not(feature = "contracts"))]
+    {
     let map = ctx.wasm_contracts.lock().unwrap();
     let mut items: Vec<serde_json::Value> = Vec::new();
     for (addr, counter) in map.iter() {
         items.push(json!({"address": addr, "counter": counter}));
     }
     Ok(Json(json!({"contracts": items})))
+    }
 }
 
 // Rewards API endpoints
@@ -1810,7 +1833,7 @@ pub async fn params_staking_reward_rate(
 
 /// JSON-RPC 2.0 endpoint stub (minimal WASM contract support)
 pub async fn json_rpc(
-    Extension(ctx): Extension<RpcContext>,
+    Extension(_ctx): Extension<RpcContext>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let method = body

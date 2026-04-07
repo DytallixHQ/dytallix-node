@@ -7,8 +7,6 @@ use dytallix_fast_node::storage::state::Storage;
 use std::sync::{Arc, Mutex};
 use tempfile::tempdir;
 
-const TOLERANCE: f64 = 1e-9;
-
 #[test]
 fn test_emission_staking_integration() {
     let dir = tempdir().unwrap();

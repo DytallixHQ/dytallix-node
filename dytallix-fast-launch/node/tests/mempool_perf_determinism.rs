@@ -41,7 +41,7 @@ fn create_test_transaction(
     // Generate a fresh keypair per tx (sufficient for tests). In production we would
     // use the sender's actual key. This ensures signature verification passes.
     let (sk, pk) = ActivePQC::keypair();
-    let mut tx = Transaction::base(hash, from, to, amount, fee, nonce)
+    let tx = Transaction::base(hash, from, to, amount, fee, nonce)
         .with_gas(gas_limit, gas_price)
         .with_pqc(B64.encode(&pk), "dytallix-testnet", "");
 
@@ -68,7 +68,7 @@ fn create_test_transaction_with_key(
     sk: &[u8],
     pk: &[u8],
 ) -> Transaction {
-    let mut tx = Transaction::base(hash, from, to, amount, fee, nonce)
+    let tx = Transaction::base(hash, from, to, amount, fee, nonce)
         .with_gas(gas_limit, gas_price)
         .with_pqc(B64.encode(pk), "dytallix-testnet", "");
 

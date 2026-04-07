@@ -71,7 +71,14 @@ fn test_reject_insufficient_funds() {
     );
 
     let result = mempool.add_transaction(&state, tx);
-    assert!(matches!(result, Err(RejectionReason::InsufficientFunds)));
+    assert!(matches!(
+        result,
+        Err(RejectionReason::InsufficientFunds {
+            denom: _,
+            required: _,
+            available: _
+        })
+    ));
 }
 
 #[test]

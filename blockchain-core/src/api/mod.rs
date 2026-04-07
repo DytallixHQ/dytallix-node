@@ -1253,6 +1253,7 @@ pub async fn start_api_server() -> Result<(), Box<dyn std::error::Error>> {
         .or(get_block)
         .or(peers)
         .or(stats)
+        .or(status)
         .or(staking_stats)
         .or(staking_validators)
         .or(staking_rewards)

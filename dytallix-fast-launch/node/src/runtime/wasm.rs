@@ -144,6 +144,28 @@ impl WasmRuntime {
         args: &[u8],
         gas_limit: u64,
     ) -> Result<ContractExecution> {
+        self.execute_contract_internal(contract_address, method, args, gas_limit, true)
+    }
+
+    /// Execute a read-only contract query without recording an event.
+    pub fn query_contract(
+        &self,
+        contract_address: &Address,
+        method: &str,
+        args: &[u8],
+        gas_limit: u64,
+    ) -> Result<ContractExecution> {
+        self.execute_contract_internal(contract_address, method, args, gas_limit, false)
+    }
+
+    fn execute_contract_internal(
+        &self,
+        contract_address: &Address,
+        method: &str,
+        args: &[u8],
+        gas_limit: u64,
+        record_history: bool,
+    ) -> Result<ContractExecution> {
         let mut gas_meter = GasMeter::new(gas_limit);
 
         // Charge base execution gas
@@ -200,9 +222,10 @@ impl WasmRuntime {
             logs: self.engine.env().take_logs(),
         };
 
-        // Store execution history
-        let mut history = self.execution_history.lock().unwrap();
-        history.push(execution.clone());
+        if record_history {
+            let mut history = self.execution_history.lock().unwrap();
+            history.push(execution.clone());
+        }
 
         Ok(execution)
     }

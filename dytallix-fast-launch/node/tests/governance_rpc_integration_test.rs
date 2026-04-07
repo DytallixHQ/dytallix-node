@@ -62,6 +62,8 @@ async fn governance_rpc_happy_path_test() {
             staking: true,
         },
         wasm_contracts: Arc::new(Mutex::new(HashMap::new())),
+        #[cfg(feature = "contracts")]
+        wasm_runtime: Arc::new(dytallix_fast_node::runtime::wasm::WasmRuntime::new()),
         pending_assets: Arc::new(Mutex::new(Vec::new())),
     };
 

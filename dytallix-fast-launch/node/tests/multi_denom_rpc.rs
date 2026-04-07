@@ -60,6 +60,8 @@ async fn test_balance_endpoint() {
         },
         // Add minimal wasm contracts map required by RpcContext
         wasm_contracts: Arc::new(Mutex::new(std::collections::HashMap::new())),
+        #[cfg(feature = "contracts")]
+        wasm_runtime: Arc::new(dytallix_fast_node::runtime::wasm::WasmRuntime::new()),
         pending_assets: Arc::new(Mutex::new(Vec::new())),
     };
 

@@ -62,8 +62,8 @@ tempfile = "3"
 rand = "0.7"
 
 [features]
-# Lean default: core + PQC + metrics + oracle (for /metrics endpoint)
-default = ["pqc-fips204", "metrics", "oracle"]
+# Public default: core + PQC + metrics + oracle + contracts
+default = ["pqc-fips204", "metrics", "oracle", "contracts"]
 # Existing features
 pqc-real = ["pqcrypto-dilithium", "pqcrypto-traits"]
 pqc-fips204 = ["fips204"]  # Pure Rust FIPS 204 (ML-DSA) - WASM compatible

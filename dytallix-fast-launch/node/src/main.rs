@@ -675,6 +675,19 @@ async fn main() -> anyhow::Result<()> {
     #[cfg(feature = "contracts")]
     {
         app = app
+            .route("/api/contracts/:contract_address", get(rpc::contract_info))
+            .route(
+                "/api/contracts/:contract_address/query/:method",
+                get(rpc::contract_query),
+            )
+            .route(
+                "/api/contracts/:contract_address/events",
+                get(rpc::contract_events),
+            )
+            .route(
+                "/api/contracts/:contract_address/state/:key",
+                get(rpc::contracts_state),
+            )
             .route("/contracts/deploy", post(rpc::contracts_deploy))
             .route("/contracts/call", post(rpc::contracts_call))
             .route(
