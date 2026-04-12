@@ -65,6 +65,10 @@ async fn governance_rpc_happy_path_test() {
         #[cfg(feature = "contracts")]
         wasm_runtime: Arc::new(dytallix_fast_node::runtime::wasm::WasmRuntime::new()),
         pending_assets: Arc::new(Mutex::new(Vec::new())),
+        proposer_address: None,
+        validator_public_key_b64: None,
+        validator_algorithm: None,
+        slots_per_epoch: 100,
     };
 
     // Test step 1: Submit proposal

@@ -63,6 +63,10 @@ async fn test_balance_endpoint() {
         #[cfg(feature = "contracts")]
         wasm_runtime: Arc::new(dytallix_fast_node::runtime::wasm::WasmRuntime::new()),
         pending_assets: Arc::new(Mutex::new(Vec::new())),
+        proposer_address: None,
+        validator_public_key_b64: None,
+        validator_algorithm: None,
+        slots_per_epoch: 100,
     };
 
     // Test multi-denomination response (no specific denom requested)

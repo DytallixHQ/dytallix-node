@@ -65,6 +65,10 @@ fn build_ctx() -> RpcContext {
         wasm_contracts: Arc::new(Mutex::new(HashMap::new())),
         wasm_runtime: Arc::new(dytallix_fast_node::runtime::wasm::WasmRuntime::new()),
         pending_assets: Arc::new(Mutex::new(Vec::new())),
+        proposer_address: None,
+        validator_public_key_b64: None,
+        validator_algorithm: None,
+        slots_per_epoch: 100,
     }
 }
 

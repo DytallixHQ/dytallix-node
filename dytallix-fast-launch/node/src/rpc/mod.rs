@@ -83,12 +83,77 @@ pub struct RpcContext {
     pub wasm_runtime: Arc<crate::runtime::wasm::WasmRuntime>,
     /// Pending asset hashes to be included in the next block
     pub pending_assets: Arc<Mutex<Vec<String>>>,
+    pub proposer_address: Option<String>,
+    pub validator_public_key_b64: Option<String>,
+    pub validator_algorithm: Option<String>,
+    pub slots_per_epoch: u64,
 }
 
 #[derive(Clone, Copy)]
 pub struct FeatureFlags {
     pub governance: bool,
     pub staking: bool,
+}
+
+fn epoch_and_slot(height: u64, slots_per_epoch: u64) -> (u64, u64) {
+    let slots_per_epoch = slots_per_epoch.max(1);
+    if height == 0 {
+        return (0, 0);
+    }
+
+    let zero_based_height = height.saturating_sub(1);
+    (
+        zero_based_height / slots_per_epoch,
+        zero_based_height % slots_per_epoch,
+    )
+}
+
+fn estimate_transaction_size(tx: &Transaction) -> usize {
+    tx.hash.len() + tx.from.len() + tx.to.len() + 64
+}
+
+fn block_gas_breakdown(block: &crate::storage::blocks::Block, storage: &Storage) -> (u64, u64, u64) {
+    let gas_schedule = crate::gas::GasSchedule::default();
+    let mut total_gas_used = 0u64;
+    let mut bandwidth_gas_used = 0u64;
+
+    for tx in &block.txs {
+        if let Some(receipt) = storage.get_receipt(&tx.hash) {
+            total_gas_used = total_gas_used.saturating_add(receipt.gas_used);
+            let tx_bandwidth = gas_schedule
+                .per_byte
+                .saturating_mul(estimate_transaction_size(tx) as u64);
+            bandwidth_gas_used = bandwidth_gas_used.saturating_add(tx_bandwidth);
+        }
+    }
+
+    bandwidth_gas_used = bandwidth_gas_used.min(total_gas_used);
+    let compute_gas_used = total_gas_used.saturating_sub(bandwidth_gas_used);
+    (compute_gas_used, bandwidth_gas_used, total_gas_used)
+}
+
+fn block_response(
+    block: &crate::storage::blocks::Block,
+    ctx: &RpcContext,
+    txs: Vec<serde_json::Value>,
+) -> serde_json::Value {
+    let (epoch, slot) = epoch_and_slot(block.header.height, ctx.slots_per_epoch);
+    let (c_gas_used, b_gas_used, gas_used) = block_gas_breakdown(block, &ctx.storage);
+
+    json!({
+        "hash": block.hash,
+        "height": block.header.height,
+        "parent": block.header.parent,
+        "timestamp": block.header.timestamp,
+        "txs": txs,
+        "asset_hashes": block.header.asset_hashes,
+        "proposer": ctx.proposer_address,
+        "epoch": epoch,
+        "slot": slot,
+        "gas_used": gas_used,
+        "c_gas_used": c_gas_used,
+        "b_gas_used": b_gas_used,
+    })
 }
 
 #[derive(Deserialize)]
@@ -595,14 +660,8 @@ pub async fn list_blocks(
                     "memo": tx.memo,
                 })
             }).collect();
-            
-            blocks.push(json!({
-                "height": b.header.height, 
-                "hash": b.hash, 
-                "timestamp": b.header.timestamp,
-                "txs": tx_objects,
-                "asset_hashes": b.header.asset_hashes
-            }));
+
+            blocks.push(block_response(&b, &ctx, tx_objects));
         }
         if h == 0 {
             break;
@@ -704,14 +763,12 @@ pub async fn get_block(
             .and_then(|h| ctx.storage.get_block_by_height(h))
     };
     if let Some(b) = block {
-        let obj = json!({
-            "hash": b.hash,
-            "height": b.header.height,
-            "parent": b.header.parent,
-            "timestamp": b.header.timestamp,
-            "txs": b.txs,
-            "asset_hashes": b.header.asset_hashes,
-        });
+        let txs = b
+            .txs
+            .iter()
+            .map(|tx| serde_json::to_value(tx).unwrap_or_else(|_| json!({"hash": tx.hash})))
+            .collect();
+        let obj = block_response(&b, &ctx, txs);
         Ok(Json(obj))
     } else {
         Err(ApiError::NotFound)
@@ -859,6 +916,7 @@ pub async fn status(ctx: axum::Extension<RpcContext>) -> Json<serde_json::Value>
         .unwrap()
         .as_secs();
     let latest_height = ctx.storage.height();
+    let (epoch, slot) = epoch_and_slot(latest_height, ctx.slots_per_epoch);
     let mempool_size = ctx.mempool.lock().unwrap().len();
     let chain_id = ctx.storage.get_chain_id();
     let min_gas_price = current_public_gas_price(&ctx);
@@ -875,6 +933,8 @@ pub async fn status(ctx: axum::Extension<RpcContext>) -> Json<serde_json::Value>
         "syncing": syncing,
         "mempool_size": mempool_size,
         "chain_id": chain_id,
+        "epoch": epoch,
+        "slot": slot,
         "gas": {
             "version": crate::gas::GAS_TABLE_VERSION,
             "fee_denom": "udgt",
@@ -886,6 +946,11 @@ pub async fn status(ctx: axum::Extension<RpcContext>) -> Json<serde_json::Value>
             "per_additional_signature": gas_schedule.per_additional_signature,
             "per_kv_read": gas_schedule.per_kv_read,
             "per_kv_write": gas_schedule.per_kv_write
+        },
+        "validator": {
+            "proposer": ctx.proposer_address,
+            "public_key": ctx.validator_public_key_b64,
+            "algorithm": ctx.validator_algorithm,
         },
         "timestamp": now
     }))

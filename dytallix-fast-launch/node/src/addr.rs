@@ -1,6 +1,6 @@
-// Address derivation module for Node - mirrors CLI implementation for compatibility
+// Address derivation helpers for node-side identity exposure.
 
-use blake3;
+use bech32::{Bech32m, Hrp};
 use sha2::{Digest, Sha256};
 
 pub fn get_address(pubkey: &[u8]) -> String {
@@ -26,6 +26,12 @@ pub fn get_address(pubkey: &[u8]) -> String {
 
     // Step 6: Encode in hexadecimal and add prefix "dyt1"
     format!("dyt1{}", hex::encode(full_bytes))
+}
+
+pub fn canonical_address(pubkey: &[u8]) -> String {
+    let hash = blake3::hash(pubkey);
+    let hrp = Hrp::parse("dytallix").expect("valid dytallix hrp");
+    bech32::encode::<Bech32m>(hrp, hash.as_bytes()).expect("canonical address encoding")
 }
 
 pub fn validate_address(address: &str) -> bool {
@@ -144,5 +150,14 @@ mod tests {
         let corrupted_address: String = chars.into_iter().collect();
 
         assert!(!validate_address(&corrupted_address));
+    }
+
+    #[test]
+    fn canonical_address_uses_dytallix_prefix() {
+        let pubkey = b"test_public_key_123456789012345678901234567890";
+        let address = canonical_address(pubkey);
+
+        assert!(address.starts_with("dytallix1"));
+        assert_ne!(address, canonical_address(b"other_key_material"));
     }
 }

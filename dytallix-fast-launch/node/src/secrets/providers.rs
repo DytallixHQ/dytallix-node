@@ -1,8 +1,50 @@
 use anyhow::{anyhow, Context, Result};
 use base64::engine::general_purpose;
 use base64::Engine as _;
-use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "pqc-fips204")]
+use fips204::ml_dsa_65;
+#[cfg(feature = "pqc-fips204")]
+use fips204::ml_dsa_87;
+#[cfg(feature = "pqc-fips204")]
+use fips204::traits::{KeyGen, SerDes};
+#[cfg(not(feature = "pqc-fips204"))]
+use rand::{rngs::OsRng, RngCore};
+
+#[cfg(feature = "pqc-fips204")]
+fn generate_validator_secret_key() -> Vec<u8> {
+    let (_pk, sk) = ml_dsa_87::KG::try_keygen().expect("validator key generation failed");
+    sk.into_bytes().to_vec()
+}
+
+#[cfg(not(feature = "pqc-fips204"))]
+fn generate_validator_secret_key() -> Vec<u8> {
+    let mut key_bytes = vec![0u8; 64];
+    OsRng.fill_bytes(&mut key_bytes);
+    key_bytes
+}
+
+#[cfg(feature = "pqc-fips204")]
+fn is_supported_validator_secret(key: &[u8]) -> bool {
+    if key.len() == ml_dsa_65::SK_LEN {
+        let mut sk = [0u8; ml_dsa_65::SK_LEN];
+        sk.copy_from_slice(key);
+        return ml_dsa_65::PrivateKey::try_from_bytes(sk).is_ok();
+    }
+
+    if key.len() == ml_dsa_87::SK_LEN {
+        let mut sk = [0u8; ml_dsa_87::SK_LEN];
+        sk.copy_from_slice(key);
+        return ml_dsa_87::PrivateKey::try_from_bytes(sk).is_ok();
+    }
+
+    false
+}
+
+#[cfg(not(feature = "pqc-fips204"))]
+fn is_supported_validator_secret(key: &[u8]) -> bool {
+    !key.is_empty()
+}
 
 // Async traits for providers
 #[async_trait::async_trait]
@@ -155,16 +197,21 @@ impl KeyProvider for SealedKeystoreProvider {
         let path = self.file_path(id);
         fs::create_dir_all(&self.dir).ok();
         if !path.exists() {
-            // Dev-friendly behavior: generate new key material without passphrase and store plaintext.
-            let mut key_bytes = vec![0u8; 64];
-            OsRng.fill_bytes(&mut key_bytes);
+            let key_bytes = generate_validator_secret_key();
             fs::write(&path, &key_bytes).context("write keystore failed")?;
             self.write_proof(&path);
             Ok(key_bytes)
         } else {
             let pt = fs::read(&path).context("read keystore failed")?;
+            let key_bytes = if is_supported_validator_secret(&pt) {
+                pt
+            } else {
+                let regenerated = generate_validator_secret_key();
+                fs::write(&path, &regenerated).context("rewrite keystore failed")?;
+                regenerated
+            };
             self.write_proof(&path);
-            Ok(pt)
+            Ok(key_bytes)
         }
     }
 

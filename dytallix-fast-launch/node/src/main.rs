@@ -55,6 +55,14 @@ async fn main() -> anyhow::Result<()> {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(15000);
+    let slots_per_epoch: u64 = std::env::var("DYT_SLOTS_PER_EPOCH")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or_else(|| {
+            let seconds_per_block = (block_interval_ms / 1000).max(1);
+            (86_400 / seconds_per_block).max(1)
+        });
     let empty_blocks = std::env::var("DYT_EMPTY_BLOCKS")
         .map(|v| v == "true" || v == "1")
         .unwrap_or(true);
@@ -337,6 +345,10 @@ async fn main() -> anyhow::Result<()> {
             }
         }
     }
+    if let Some(address) = secrets::validator_address() {
+        println!("Validator proposer address: {address}");
+    }
+    println!("Chain slots per epoch: {slots_per_epoch}");
 
     // Initialize metrics
     let metrics_config = parse_metrics_config();
@@ -417,6 +429,10 @@ async fn main() -> anyhow::Result<()> {
         #[cfg(feature = "contracts")]
         wasm_runtime: Arc::new(dytallix_fast_node::runtime::wasm::WasmRuntime::new()),
         pending_assets: Arc::new(Mutex::new(Vec::new())),
+        proposer_address: secrets::validator_address().map(str::to_owned),
+        validator_public_key_b64: secrets::validator_public_key_b64(),
+        validator_algorithm: secrets::validator_algorithm().map(str::to_owned),
+        slots_per_epoch,
     };
 
     // Apply governance env overrides (after ctx creation so we can mutate inside mutex)
