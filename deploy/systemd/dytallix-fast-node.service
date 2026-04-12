@@ -1,0 +1,17 @@
+[Unit]
+Description=Dytallix Fast Node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/dytallix-node
+EnvironmentFile=-/etc/dytallix/dytallix-fast-node.env
+ExecStart=/opt/dytallix-node/dytallix-fast-launch/node/target/release/dytallix-fast-node
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

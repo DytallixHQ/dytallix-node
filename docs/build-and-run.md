@@ -42,6 +42,30 @@ cargo run -p dytallix-fast-node --bin dytallix-fast-node --release
 The deeper runtime and endpoint notes live in
 [Fast node RPC reference](../dytallix-fast-launch/node/README_RPC.md).
 
+### Clean production separation
+
+For production-style deployment, keep the node under a Dytallix-owned root such
+as `/opt/dytallix-node` instead of launching it from a QuantumVault PM2 tree.
+
+Reference artifacts in this repository:
+
+- PM2: [`deploy/pm2/dytallix-fast-node.ecosystem.cjs`](../deploy/pm2/dytallix-fast-node.ecosystem.cjs)
+- systemd: [`deploy/systemd/dytallix-fast-node.service`](../deploy/systemd/dytallix-fast-node.service)
+
+Recommended install flow:
+
+```bash
+git clone https://github.com/DytallixHQ/dytallix-node.git /opt/dytallix-node
+cd /opt/dytallix-node
+cargo build -p dytallix-fast-node --bin dytallix-fast-node --release --locked
+mkdir -p /etc/dytallix /var/log/dytallix
+```
+
+Populate `/etc/dytallix/dytallix-fast-node.env` with the runtime environment you
+intend to keep. Do not carry forward temporary incident workarounds such as
+`DYTALLIX_DEFAULT_GAS_LIMIT=8000` unless you have explicitly revalidated that
+override against current source.
+
 ## Core Node
 
 Build the core chain binary:
@@ -90,3 +114,4 @@ See the example contract in
 - [PQC implementation](../dytallix-fast-launch/node/PQC_IMPLEMENTATION.md)
 - [Secrets management](../blockchain-core/SECRETS_README.md)
 - [PulseGuard API draft](../blockchain-core/src/risk/pulseguard/api/OPENAPI.md)
+- [Deployment separation audit](deployment-separation-audit.md)

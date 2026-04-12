@@ -12,6 +12,8 @@ workspace.
 - [RPC and API docs](rpc-and-apis.md) - public node endpoints and where the
   deeper protocol docs live
 - [FAQ](faq.md) - operational questions about this repository snapshot
+- [Deployment separation audit](deployment-separation-audit.md) - classification
+  of current Dytallix versus QuantumVault deployment overlap
 
 ## Existing Internal Docs
 

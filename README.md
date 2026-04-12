@@ -13,6 +13,7 @@ single machine.
 - [Build and run](docs/build-and-run.md)
 - [RPC and API docs](docs/rpc-and-apis.md)
 - [FAQ](docs/faq.md)
+- [Deployment separation audit](docs/deployment-separation-audit.md)
 - [Fast node RPC reference](dytallix-fast-launch/node/README_RPC.md)
 - [PQC implementation](dytallix-fast-launch/node/PQC_IMPLEMENTATION.md)
 - [Secrets management](blockchain-core/SECRETS_README.md)
