@@ -152,7 +152,9 @@ async fn contracts_counter_e2e() {
         .await
         .expect("contract events should succeed")
         .0;
-    let events = events["events"].as_array().expect("events should be an array");
+    let events = events["events"]
+        .as_array()
+        .expect("events should be an array");
     assert_eq!(events.len(), 1);
     assert_eq!(events[0]["method"], "ping");
     assert!(events[0]["tx_hash"].as_str().is_some());

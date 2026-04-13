@@ -187,9 +187,14 @@ impl PQCManager {
         match self.signature_keypair.algorithm {
             SignatureAlgorithm::Dilithium3 => {
                 let sk = dilithium3::SecretKey::from_bytes(&self.signature_keypair.secret_key)
-                    .map_err(|_| PQCError::InvalidKey("Invalid Dilithium3 secret key".to_string()))?;
+                    .map_err(|_| {
+                        PQCError::InvalidKey("Invalid Dilithium3 secret key".to_string())
+                    })?;
                 let signed_message = dilithium3::sign(message, &sk);
-                Ok(Signature { data: signed_message.as_bytes().to_vec(), algorithm: SignatureAlgorithm::Dilithium3 })
+                Ok(Signature {
+                    data: signed_message.as_bytes().to_vec(),
+                    algorithm: SignatureAlgorithm::Dilithium3,
+                })
             }
             SignatureAlgorithm::Dilithium5 => {
                 let sk = dilithium5::SecretKey::from_bytes(&self.signature_keypair.secret_key)
@@ -254,10 +259,13 @@ impl PQCManager {
     ) -> Result<bool, PQCError> {
         match signature.algorithm {
             SignatureAlgorithm::Dilithium3 => {
-                let pk = dilithium3::PublicKey::from_bytes(public_key)
-                    .map_err(|_| PQCError::InvalidKey("Invalid Dilithium3 public key".to_string()))?;
+                let pk = dilithium3::PublicKey::from_bytes(public_key).map_err(|_| {
+                    PQCError::InvalidKey("Invalid Dilithium3 public key".to_string())
+                })?;
                 let signed_message = dilithium3::SignedMessage::from_bytes(&signature.data)
-                    .map_err(|_| PQCError::InvalidSignature("Invalid Dilithium3 signature".to_string()))?;
+                    .map_err(|_| {
+                        PQCError::InvalidSignature("Invalid Dilithium3 signature".to_string())
+                    })?;
                 match dilithium3::open(&signed_message, &pk) {
                     Ok(verified_message) => Ok(verified_message == message),
                     Err(_) => Ok(false),
@@ -877,7 +885,10 @@ mod tests {
         let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let meta = base.join("../DytallixLiteLaunch/vendor/pqcrypto-dilithium/pqclean/crypto_sign/dilithium3/META.yml");
         if !meta.exists() {
-            eprintln!("META.yml not found for Dilithium3 at {} ; skipping meta hash check", meta.display());
+            eprintln!(
+                "META.yml not found for Dilithium3 at {} ; skipping meta hash check",
+                meta.display()
+            );
             return; // Skip in environments without vendor folder
         }
         let contents = std::fs::read_to_string(meta).expect("read META.yml");
@@ -893,8 +904,7 @@ mod tests {
         let hash = found.expect("nistkat-sha256 not found in META.yml");
         assert_eq!(
             hash,
-            "4ae9921a12524a31599550f2b4e57b6db1b133987c348f07e12d20fc4aa426d5"
-                .to_string()
+            "4ae9921a12524a31599550f2b4e57b6db1b133987c348f07e12d20fc4aa426d5".to_string()
         );
     }
 }

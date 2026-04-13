@@ -37,9 +37,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub mod ai;
-pub mod errors; // restored errors module export
 #[cfg(feature = "contracts")]
 pub mod contracts;
+pub mod errors; // restored errors module export
 #[cfg(feature = "contracts")]
 pub use contracts::{
     contract_events, contract_info, contract_query, contracts_call, contracts_deploy,
@@ -95,6 +95,47 @@ pub struct FeatureFlags {
     pub staking: bool,
 }
 
+const PUBLIC_CAPABILITIES_JSON: &str =
+    include_str!("../../../../docs/public-capabilities.json");
+
+fn public_capabilities_document() -> serde_json::Value {
+    serde_json::from_str(PUBLIC_CAPABILITIES_JSON)
+        .expect("node public capabilities manifest must be valid JSON")
+}
+
+fn governance_write_unavailable() -> ApiError {
+    ApiError::NotImplemented(
+        "Governance write routes are intentionally disabled on the public alpha node until proposal, deposit, vote, and execution semantics are production-complete. Public governance reads remain available.".to_string(),
+    )
+}
+
+fn staking_write_unavailable() -> ApiError {
+    ApiError::NotImplemented(
+        "Staking write routes are intentionally disabled on the public alpha node until delegation, undelegation, and reward-claim semantics are production-complete. Public staking reads remain available.".to_string(),
+    )
+}
+
+fn public_validator_entries(ctx: &RpcContext, total_stake: u128) -> Vec<serde_json::Value> {
+    let Some(address) = ctx.proposer_address.as_ref() else {
+        return Vec::new();
+    };
+
+    vec![json!({
+        "address": address,
+        "moniker": "Current Proposer",
+        "voting_power": total_stake.to_string(),
+        "voting_power_formatted": format!("{:.2} DGT", (total_stake as f64) / 1_000_000.0),
+        "commission": null,
+        "status": if ctx.features.staking { "active" } else { "operator-preview" },
+        "uptime": null,
+        "delegator_count": 0,
+        "pqc_enabled": ctx.validator_public_key_b64.is_some(),
+        "public_key": ctx.validator_public_key_b64,
+        "algorithm": ctx.validator_algorithm,
+        "source": "validator_secrets"
+    })]
+}
+
 fn epoch_and_slot(height: u64, slots_per_epoch: u64) -> (u64, u64) {
     let slots_per_epoch = slots_per_epoch.max(1);
     if height == 0 {
@@ -112,7 +153,10 @@ fn estimate_transaction_size(tx: &Transaction) -> usize {
     tx.hash.len() + tx.from.len() + tx.to.len() + 64
 }
 
-fn block_gas_breakdown(block: &crate::storage::blocks::Block, storage: &Storage) -> (u64, u64, u64) {
+fn block_gas_breakdown(
+    block: &crate::storage::blocks::Block,
+    storage: &Storage,
+) -> (u64, u64, u64) {
     let gas_schedule = crate::gas::GasSchedule::default();
     let mut total_gas_used = 0u64;
     let mut bandwidth_gas_used = 0u64;
@@ -210,7 +254,7 @@ fn validate_signed_tx(
         .ok()
         .and_then(|v| v.parse::<bool>().ok())
         .unwrap_or(false);
-    
+
     if !skip_sig_check && signed_tx.verify().is_err() {
         return Err(ValidationError::InvalidSignature);
     } else if skip_sig_check {
@@ -251,7 +295,7 @@ fn validate_signed_tx(
             Msg::Send { denom, amount, .. } => {
                 // Normalize denomination to lowercase micro-denom
                 let normalized_denom = denom.to_ascii_lowercase();
-                
+
                 // If uppercase macro-denom (DGT/DRT) is used, convert to micro-denom
                 // Otherwise assume it's already a micro-denom (udgt/udrt)
                 let (micro_denom, micro_amount) = match normalized_denom.as_str() {
@@ -279,8 +323,10 @@ fn validate_signed_tx(
     for (denom, required_amount) in required_per_denom {
         let available = account_state.balance_of(&denom);
         if available < required_amount {
-            eprintln!("WARN  [Validator] Insufficient {} balance for tx: required={}, available={}", 
-                denom, required_amount, available);
+            eprintln!(
+                "WARN  [Validator] Insufficient {} balance for tx: required={}, available={}",
+                denom, required_amount, available
+            );
             return Err(ValidationError::InsufficientFunds {
                 denom: denom.clone(),
                 required: required_amount,
@@ -432,23 +478,29 @@ pub async fn submit(
     // Convert messages to storage format
     use crate::storage::tx::TxMessage;
     let mut tx_messages = Vec::new();
-    
+
     // Sum send amounts so legacy accounting reserves the correct value
     let mut total_amount: u128 = 0;
     let mut first_to = legacy_tx.to.clone();
     let mut first_denom = "udgt".to_string(); // Default for backward compatibility
     for msg in &signed_tx.tx.msgs {
         match msg {
-            Msg::Send { to, amount, denom, from: msg_from, .. } => {
+            Msg::Send {
+                to,
+                amount,
+                denom,
+                from: msg_from,
+                ..
+            } => {
                 total_amount = total_amount.saturating_add(*amount);
-                
+
                 // Convert DGT/DRT to micro denominations for storage
                 let micro_denom = match denom.to_ascii_uppercase().as_str() {
                     "DGT" => "udgt".to_string(),
                     "DRT" => "udrt".to_string(),
                     _ => denom.clone(), // Pass through other denoms
                 };
-                
+
                 // Store message in new format
                 tx_messages.push(TxMessage::Send {
                     from: msg_from.clone(),
@@ -456,20 +508,27 @@ pub async fn submit(
                     denom: micro_denom.clone(),
                     amount: *amount,
                 });
-                
+
                 if first_to == from {
                     first_to = to.clone();
                     first_denom = micro_denom;
                 }
             }
-            Msg::Data { from: msg_from, data } => {
+            Msg::Data {
+                from: msg_from,
+                data,
+            } => {
                 // Store data message
                 tx_messages.push(TxMessage::Data {
                     from: msg_from.clone(),
                     data: data.clone(),
                 });
             }
-            Msg::DmsRegister { from, beneficiary, period } => {
+            Msg::DmsRegister {
+                from,
+                beneficiary,
+                period,
+            } => {
                 tx_messages.push(TxMessage::DmsRegister {
                     from: from.clone(),
                     beneficiary: beneficiary.clone(),
@@ -477,9 +536,7 @@ pub async fn submit(
                 });
             }
             Msg::DmsPing { from } => {
-                tx_messages.push(TxMessage::DmsPing {
-                    from: from.clone(),
-                });
+                tx_messages.push(TxMessage::DmsPing { from: from.clone() });
             }
             Msg::DmsClaim { from, owner } => {
                 tx_messages.push(TxMessage::DmsClaim {
@@ -497,8 +554,8 @@ pub async fn submit(
     // Set gas parameters before mempool validation
     let min_gas_price = current_public_gas_price(&ctx);
     legacy_tx.gas_price = min_gas_price;
-    legacy_tx.gas_limit = gas_limit_from_signed_fee(signed_tx.tx.fee, min_gas_price).map_err(
-        |reason| {
+    legacy_tx.gas_limit =
+        gas_limit_from_signed_fee(signed_tx.tx.fee, min_gas_price).map_err(|reason| {
             append_submit_log(&base_log(
                 false,
                 json!({
@@ -510,8 +567,7 @@ pub async fn submit(
                 }),
             ));
             ApiError::BadRequest(reason)
-        },
-    )?;
+        })?;
 
     // Add to mempool (mempool will perform full validation including gas cost)
     let state_snapshot = {
@@ -537,7 +593,11 @@ pub async fn submit(
                     ));
                     return Err(e);
                 }
-                crate::mempool::RejectionReason::InsufficientFunds { denom, required, available } => {
+                crate::mempool::RejectionReason::InsufficientFunds {
+                    denom,
+                    required,
+                    available,
+                } => {
                     let ve = ValidationError::InsufficientFunds {
                         denom: denom.clone(),
                         required,
@@ -585,19 +645,15 @@ pub async fn submit(
     }
 
     // Store transaction and receipt
-    ctx.storage
-        .put_tx(&legacy_tx)
-        .map_err(|e| {
-            eprintln!("[ERROR] Failed to store transaction: {:?}", e);
-            ApiError::Internal
-        })?;
+    ctx.storage.put_tx(&legacy_tx).map_err(|e| {
+        eprintln!("[ERROR] Failed to store transaction: {:?}", e);
+        ApiError::Internal
+    })?;
     let pending = TxReceipt::pending(&legacy_tx);
-    ctx.storage
-        .put_pending_receipt(&pending)
-        .map_err(|e| {
-            eprintln!("[ERROR] Failed to store pending receipt: {:?}", e);
-            ApiError::Internal
-        })?;
+    ctx.storage.put_pending_receipt(&pending).map_err(|e| {
+        eprintln!("[ERROR] Failed to store pending receipt: {:?}", e);
+        ApiError::Internal
+    })?;
 
     // Broadcast to websocket
     ctx.ws.broadcast_json(&json!({
@@ -643,23 +699,27 @@ pub async fn list_blocks(
     while h > 0 && blocks.len() < limit as usize {
         if let Some(b) = ctx.storage.get_block_by_height(h) {
             // Explicitly serialize transactions to ensure full objects are returned
-            let tx_objects: Vec<serde_json::Value> = b.txs.iter().map(|tx| {
-                json!({
-                    "hash": tx.hash,
-                    "from": tx.from,
-                    "to": tx.to,
-                    "amount": tx.amount.to_string(),
-                    "fee": tx.fee.to_string(),
-                    "nonce": tx.nonce,
-                    "denom": tx.denom,
-                    "signature": tx.signature,
-                    "gas_limit": tx.gas_limit,
-                    "gas_price": tx.gas_price,
-                    "public_key": tx.public_key,
-                    "chain_id": tx.chain_id,
-                    "memo": tx.memo,
+            let tx_objects: Vec<serde_json::Value> = b
+                .txs
+                .iter()
+                .map(|tx| {
+                    json!({
+                        "hash": tx.hash,
+                        "from": tx.from,
+                        "to": tx.to,
+                        "amount": tx.amount.to_string(),
+                        "fee": tx.fee.to_string(),
+                        "nonce": tx.nonce,
+                        "denom": tx.denom,
+                        "signature": tx.signature,
+                        "gas_limit": tx.gas_limit,
+                        "gas_price": tx.gas_price,
+                        "public_key": tx.public_key,
+                        "chain_id": tx.chain_id,
+                        "memo": tx.memo,
+                    })
                 })
-            }).collect();
+                .collect();
 
             blocks.push(block_response(&b, &ctx, tx_objects));
         }
@@ -672,12 +732,10 @@ pub async fn list_blocks(
 }
 
 /// GET /api/anchored-assets - Return all blocks with anchored assets (no limit)
-pub async fn list_anchored_assets(
-    ctx: axum::Extension<RpcContext>,
-) -> Json<serde_json::Value> {
+pub async fn list_anchored_assets(ctx: axum::Extension<RpcContext>) -> Json<serde_json::Value> {
     let height = ctx.storage.height();
     let mut anchored_blocks = vec![];
-    
+
     // Scan all blocks from genesis to current height
     for h in 1..=height {
         if let Some(b) = ctx.storage.get_block_by_height(h) {
@@ -693,7 +751,7 @@ pub async fn list_anchored_assets(
             }
         }
     }
-    
+
     Json(json!({
         "blocks": anchored_blocks,
         "total": anchored_blocks.len()
@@ -715,7 +773,7 @@ pub async fn list_transactions(
     let height = ctx.storage.height();
     let mut transactions = vec![];
     let mut h = q.offset.unwrap_or(height);
-    
+
     // Scan blocks from most recent backwards to find transactions
     while h > 0 && transactions.len() < limit as usize {
         if let Some(b) = ctx.storage.get_block_by_height(h) {
@@ -742,7 +800,7 @@ pub async fn list_transactions(
         }
         h -= 1;
     }
-    
+
     Json(json!({
         "transactions": transactions,
         "total": transactions.len()
@@ -909,6 +967,11 @@ pub async fn stats(ctx: axum::Extension<RpcContext>) -> Json<serde_json::Value> 
     )
 }
 
+/// GET /api/capabilities - Machine-readable public contract for compatible node deployments.
+pub async fn public_capabilities() -> Json<serde_json::Value> {
+    Json(public_capabilities_document())
+}
+
 /// GET /status - Node status endpoint for health check and basic info
 pub async fn status(ctx: axum::Extension<RpcContext>) -> Json<serde_json::Value> {
     let now = SystemTime::now()
@@ -933,6 +996,7 @@ pub async fn status(ctx: axum::Extension<RpcContext>) -> Json<serde_json::Value>
         "syncing": syncing,
         "mempool_size": mempool_size,
         "chain_id": chain_id,
+        "capabilities_endpoint": "/api/capabilities",
         "epoch": epoch,
         "slot": slot,
         "gas": {
@@ -964,37 +1028,40 @@ pub async fn health(ctx: axum::Extension<RpcContext>) -> Json<serde_json::Value>
 /// GET /genesis - Return genesis configuration
 pub async fn get_genesis() -> Result<Json<serde_json::Value>, ApiError> {
     // Read genesis.json file
-    let genesis_content = std::fs::read_to_string("genesis.json")
-        .map_err(|_| ApiError::Internal)?;
-    
-    let mut genesis: serde_json::Value = serde_json::from_str(&genesis_content)
-        .map_err(|_| ApiError::Internal)?;
-    
+    let genesis_content =
+        std::fs::read_to_string("genesis.json").map_err(|_| ApiError::Internal)?;
+
+    let mut genesis: serde_json::Value =
+        serde_json::from_str(&genesis_content).map_err(|_| ApiError::Internal)?;
+
     // Compute genesis hash
     let genesis_bytes = serde_json::to_vec(&genesis).unwrap_or_default();
     let hash = blake3::hash(&genesis_bytes);
-    
+
     // Add computed hash to metadata
     if let Some(metadata) = genesis.get_mut("metadata") {
         if let Some(obj) = metadata.as_object_mut() {
-            obj.insert("genesis_hash".to_string(), json!(format!("0x{}", hash.to_hex())));
+            obj.insert(
+                "genesis_hash".to_string(),
+                json!(format!("0x{}", hash.to_hex())),
+            );
         }
     }
-    
+
     Ok(Json(genesis))
 }
 
 /// GET /genesis/hash - Return just the genesis hash
 pub async fn get_genesis_hash() -> Result<Json<serde_json::Value>, ApiError> {
-    let genesis_content = std::fs::read_to_string("genesis.json")
-        .map_err(|_| ApiError::Internal)?;
-    
-    let genesis: serde_json::Value = serde_json::from_str(&genesis_content)
-        .map_err(|_| ApiError::Internal)?;
-    
+    let genesis_content =
+        std::fs::read_to_string("genesis.json").map_err(|_| ApiError::Internal)?;
+
+    let genesis: serde_json::Value =
+        serde_json::from_str(&genesis_content).map_err(|_| ApiError::Internal)?;
+
     let genesis_bytes = serde_json::to_vec(&genesis).unwrap_or_default();
     let hash = blake3::hash(&genesis_bytes);
-    
+
     Ok(Json(json!({
         "genesis_hash": format!("0x{}", hash.to_hex()),
         "chain_id": genesis.get("chain_id").and_then(|v| v.as_str()).unwrap_or("unknown"),
@@ -1092,9 +1159,7 @@ pub async fn gov_submit_proposal(
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     if !ctx.features.governance {
-        return Err(ApiError::NotImplemented(
-            "governance feature disabled".into(),
-        ));
+        return Err(governance_write_unavailable());
     }
     use crate::runtime::governance::ProposalType;
 
@@ -1135,9 +1200,7 @@ pub async fn gov_deposit(
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     if !ctx.features.governance {
-        return Err(ApiError::NotImplemented(
-            "governance feature disabled".into(),
-        ));
+        return Err(governance_write_unavailable());
     }
     let depositor = body
         .get("depositor")
@@ -1172,9 +1235,7 @@ pub async fn gov_vote(
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     if !ctx.features.governance {
-        return Err(ApiError::NotImplemented(
-            "governance feature disabled".into(),
-        ));
+        return Err(governance_write_unavailable());
     }
     use crate::runtime::governance::VoteOption;
 
@@ -1246,9 +1307,7 @@ pub async fn gov_execute(
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     if !ctx.features.governance {
-        return Err(ApiError::NotImplemented(
-            "governance feature disabled".into(),
-        ));
+        return Err(governance_write_unavailable());
     }
 
     let proposal_id = body
@@ -1438,12 +1497,12 @@ pub async fn list_contracts(
 
     #[cfg(not(feature = "contracts"))]
     {
-    let map = ctx.wasm_contracts.lock().unwrap();
-    let mut items: Vec<serde_json::Value> = Vec::new();
-    for (addr, counter) in map.iter() {
-        items.push(json!({"address": addr, "counter": counter}));
-    }
-    Ok(Json(json!({"contracts": items})))
+        let map = ctx.wasm_contracts.lock().unwrap();
+        let mut items: Vec<serde_json::Value> = Vec::new();
+        for (addr, counter) in map.iter() {
+            items.push(json!({"address": addr, "counter": counter}));
+        }
+        Ok(Json(json!({"contracts": items})))
     }
 }
 
@@ -1616,7 +1675,7 @@ pub async fn staking_claim(
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     if !ctx.features.staking {
-        return Err(ApiError::NotImplemented("staking feature disabled".into()));
+        return Err(staking_write_unavailable());
     }
     let address = body
         .get("address")
@@ -1695,7 +1754,7 @@ pub async fn staking_delegate(
     Json(payload): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     if !ctx.features.staking {
-        return Err(ApiError::NotImplemented("staking feature disabled".into()));
+        return Err(staking_write_unavailable());
     }
     let delegator_addr = payload["delegator_addr"]
         .as_str()
@@ -1724,7 +1783,7 @@ pub async fn staking_undelegate(
     Json(payload): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     if !ctx.features.staking {
-        return Err(ApiError::NotImplemented("staking feature disabled".into()));
+        return Err(staking_write_unavailable());
     }
     let delegator_addr = payload["delegator_addr"]
         .as_str()
@@ -1762,19 +1821,21 @@ pub async fn staking_get_stats(
     } else {
         500 // Default 5%
     };
-    
+
     // APY = reward_rate_bps / 100 (convert bps to percentage)
     let apy = (reward_rate_bps as f64) / 100.0;
 
     // Get total DGT supply from state
     let total_supply = 100_000_000_000_000u128; // 100M DGT in uDGT (6 decimals)
-    
+
     // Calculate staking ratio
     let staking_ratio = if total_supply > 0 {
         (total_stake as f64) / (total_supply as f64)
     } else {
         0.0
     };
+
+    let validator_count = public_validator_entries(&ctx, total_stake).len();
 
     Ok(Json(json!({
         "total_stake": total_stake.to_string(),
@@ -1784,8 +1845,8 @@ pub async fn staking_get_stats(
         "staking_ratio": format!("{:.2}%", staking_ratio * 100.0),
         "apy": format!("{:.2}%", apy),
         "reward_rate_bps": reward_rate_bps,
-        "total_validators": 4,
-        "active_validators": 4
+        "total_validators": validator_count,
+        "active_validators": validator_count
     })))
 }
 
@@ -1793,60 +1854,13 @@ pub async fn staking_get_stats(
 pub async fn staking_get_validators(
     Extension(ctx): Extension<RpcContext>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    // For MVP, return a set of mock validators
-    // In production, this would query actual validator data from storage
     let (total_stake, reward_index, _) = if ctx.features.staking {
         ctx.staking.lock().unwrap().get_stats()
     } else {
         (0, 0, 0)
     };
 
-    let validators = vec![
-        json!({
-            "address": "validator1",
-            "moniker": "Genesis Validator",
-            "voting_power": (total_stake / 4).to_string(),
-            "voting_power_formatted": format!("{:.2} DGT", ((total_stake / 4) as f64) / 1_000_000.0),
-            "commission": "5.00%",
-            "status": "active",
-            "uptime": "99.9%",
-            "delegator_count": 42,
-            "pqc_enabled": true
-        }),
-        json!({
-            "address": "validator2",
-            "moniker": "Quantum Guardian",
-            "voting_power": (total_stake / 4).to_string(),
-            "voting_power_formatted": format!("{:.2} DGT", ((total_stake / 4) as f64) / 1_000_000.0),
-            "commission": "7.50%",
-            "status": "active",
-            "uptime": "99.7%",
-            "delegator_count": 38,
-            "pqc_enabled": true
-        }),
-        json!({
-            "address": "validator3",
-            "moniker": "Dilithium Node",
-            "voting_power": (total_stake / 4).to_string(),
-            "voting_power_formatted": format!("{:.2} DGT", ((total_stake / 4) as f64) / 1_000_000.0),
-            "commission": "10.00%",
-            "status": "active",
-            "uptime": "99.5%",
-            "delegator_count": 31,
-            "pqc_enabled": true
-        }),
-        json!({
-            "address": "validator4",
-            "moniker": "Secure Stake",
-            "voting_power": (total_stake / 4).to_string(),
-            "voting_power_formatted": format!("{:.2} DGT", ((total_stake / 4) as f64) / 1_000_000.0),
-            "commission": "6.00%",
-            "status": "active",
-            "uptime": "99.8%",
-            "delegator_count": 45,
-            "pqc_enabled": true
-        })
-    ];
+    let validators = public_validator_entries(&ctx, total_stake);
 
     Ok(Json(json!({
         "validators": validators,
@@ -1924,33 +1938,44 @@ pub async fn asset_register(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     // Extract asset hash and metadata from request
     let params = body.get("params").and_then(|v| v.as_array());
-    
+
     if params.is_none() {
         return Err(ApiError::BadRequest("Missing params array".to_string()));
     }
-    
+
     let params = params.unwrap();
     if params.len() < 2 {
-        return Err(ApiError::BadRequest("Expected params: [asset_hash, metadata]".to_string()));
+        return Err(ApiError::BadRequest(
+            "Expected params: [asset_hash, metadata]".to_string(),
+        ));
     }
-    
+
     let asset_hash = params[0].as_str().unwrap_or("unknown");
     let metadata_str = params[1].as_str().unwrap_or("{}");
-    
+
     // Get current block height for the transaction
     let current_height = ctx.storage.height();
     let next_height = current_height + 1;
-    
+
     // Generate a transaction hash for this asset registration
-    let tx_hash = format!("dytallix_anchor_{}", blake3::hash(asset_hash.as_bytes()).to_hex());
-    
+    let tx_hash = format!(
+        "dytallix_anchor_{}",
+        blake3::hash(asset_hash.as_bytes()).to_hex()
+    );
+
     // Add asset hash to pending assets for next block
-    ctx.pending_assets.lock().unwrap().push(asset_hash.to_string());
-    
+    ctx.pending_assets
+        .lock()
+        .unwrap()
+        .push(asset_hash.to_string());
+
     // Log the asset registration
-    eprintln!("[Asset Registry] Registered asset: {} at block {}", asset_hash, next_height);
+    eprintln!(
+        "[Asset Registry] Registered asset: {} at block {}",
+        asset_hash, next_height
+    );
     eprintln!("[Asset Registry] Metadata: {}", metadata_str);
-    
+
     // Return success response with transaction details
     Ok(Json(json!({
         "success": true,
@@ -1972,19 +1997,21 @@ pub async fn asset_verify(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     // Extract asset hash from request
     let params = body.get("params").and_then(|v| v.as_array());
-    
+
     if params.is_none() {
         return Err(ApiError::BadRequest("Missing params array".to_string()));
     }
-    
+
     let params = params.unwrap();
     if params.is_empty() {
-        return Err(ApiError::BadRequest("Expected params: [asset_hash]".to_string()));
+        return Err(ApiError::BadRequest(
+            "Expected params: [asset_hash]".to_string(),
+        ));
     }
-    
+
     let asset_hash = params[0].as_str().unwrap_or("unknown");
     let current_height = ctx.storage.height();
-    
+
     // For now, we'll return success for any asset hash
     // In a full implementation, this would check against stored asset registry
     Ok(Json(json!({
@@ -2007,9 +2034,10 @@ pub async fn asset_get(
 }
 
 /// POST /faucet - Testnet faucet to credit tokens to an address
-/// This is an administrative endpoint that directly credits tokens without requiring a transaction.
-/// Request body: { "address": "dytallix1...", "dgt_amount": 10000000, "drt_amount": 100000000 }
-/// Amounts are in micro-units (1 DGT = 1_000_000 udgt)
+/// This is an administrative faucet helper that directly credits testnet funds.
+/// Request body: { "address": "dytallix1...", "dgt_amount": 10, "drt_amount": 100 }
+/// Amount inputs are whole-token grants. The handler converts them to micro-units internally.
+/// Success responses expose `funded` in whole tokens and keep `credited` for micro-unit detail.
 pub async fn faucet(
     Extension(ctx): Extension<RpcContext>,
     Json(body): Json<serde_json::Value>,
@@ -2019,25 +2047,25 @@ pub async fn faucet(
         .get("address")
         .and_then(|v| v.as_str())
         .ok_or(ApiError::BadRequest("address is required".to_string()))?;
-    
+
     // Validate address format
     if !address.starts_with("dyt") && !address.starts_with("dytallix") {
         return Err(ApiError::BadRequest("Invalid address format".to_string()));
     }
-    
+
     // Get amounts (default: 10 DGT, 100 DRT)
     let dgt_amount = body
         .get("dgt_amount")
         .and_then(|v| v.as_u64())
         .map(|v| v as u128 * 1_000_000) // Convert whole units to micro-units
         .unwrap_or(10_000_000); // Default 10 DGT
-    
+
     let drt_amount = body
         .get("drt_amount")
         .and_then(|v| v.as_u64())
         .map(|v| v as u128 * 1_000_000) // Convert whole units to micro-units
         .unwrap_or(100_000_000); // Default 100 DRT
-    
+
     // Credit the tokens
     {
         let mut state = ctx.state.lock().unwrap();
@@ -2048,17 +2076,22 @@ pub async fn faucet(
             state.credit(address, "udrt", drt_amount);
         }
     }
-    
+
     // Log the faucet distribution
     eprintln!(
         "[FAUCET] Credited {} udgt and {} udrt to {}",
         dgt_amount, drt_amount, address
     );
-    
+
     // Return success response
     Ok(Json(json!({
         "success": true,
         "address": address,
+        "funded": {
+            "dgt": dgt_amount / 1_000_000,
+            "drt": drt_amount / 1_000_000
+        },
+        "message": "Tokens sent successfully",
         "credited": {
             "dgt": {
                 "amount": dgt_amount,
@@ -2067,10 +2100,33 @@ pub async fn faucet(
             },
             "drt": {
                 "amount": drt_amount,
-                "denom": "udrt", 
+                "denom": "udrt",
                 "formatted": format!("{} DRT", drt_amount / 1_000_000)
             }
         },
         "timestamp": current_timestamp()
     })))
+}
+
+#[cfg(test)]
+mod public_contract_tests {
+    use super::public_capabilities_document;
+
+    #[test]
+    fn capabilities_document_advertises_direct_contract_endpoint() {
+        let document = public_capabilities_document();
+        assert_eq!(
+            document["publicNode"]["contractEndpoint"]["path"].as_str(),
+            Some("GET /api/capabilities")
+        );
+        assert!(document["publicNode"]["directNodeOnlyRoutes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|route| route.as_str() == Some("GET /v1/validators")));
+        assert_eq!(
+            document["validatorDiscovery"]["publicShape"].as_str(),
+            Some("daddr-compatible-addresses-only")
+        );
+    }
 }

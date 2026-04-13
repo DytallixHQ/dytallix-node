@@ -22,11 +22,11 @@ impl Default for GovernanceConfig {
             min_deposit: 1_000_000_000,    // 1000 DGT (assuming 6 decimal places)
             deposit_period: 300,           // 300 blocks for deposit period
             voting_period: 300,            // 300 blocks for voting period
-            gas_limit: 2000,               // Testnet-friendly: 2000 gas * 1000 = 2M udgt = 2 DGT fee (enough for intrinsic gas)
+            gas_limit: 2000, // Testnet-friendly: 2000 gas * 1000 = 2M udgt = 2 DGT fee (enough for intrinsic gas)
             max_gas_per_block: 10_000_000, // Default max gas per block
-            quorum: 6700,                  // 67.00% quorum required (in basis points)
-            threshold: 5000,               // 50% threshold for passing (in basis points)
-            veto_threshold: 3333,          // 33.33% veto threshold (in basis points)
+            quorum: 6700,    // 67.00% quorum required (in basis points)
+            threshold: 5000, // 50% threshold for passing (in basis points)
+            veto_threshold: 3333, // 33.33% veto threshold (in basis points)
         }
     }
 }

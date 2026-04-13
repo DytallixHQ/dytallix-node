@@ -580,9 +580,15 @@ impl DytallixRuntime {
     }
 
     /// Store arbitrary data in the blockchain state (for asset registry, etc.)
-    pub async fn store_data(&self, key: &str, value: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn store_data(
+        &self,
+        key: &str,
+        value: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let storage_key = format!("data:{}", key);
-        self.storage._put(storage_key.as_bytes(), value.as_bytes()).await?;
+        self.storage
+            ._put(storage_key.as_bytes(), value.as_bytes())
+            .await?;
         Ok(())
     }
 
@@ -593,8 +599,8 @@ impl DytallixRuntime {
             Some(bytes) => {
                 let value = String::from_utf8(bytes)?;
                 Ok(Some(value))
-            },
-            None => Ok(None)
+            }
+            None => Ok(None),
         }
     }
 

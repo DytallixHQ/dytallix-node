@@ -2,6 +2,8 @@
 
 [Docs hub](README.md) | [Build and run](build-and-run.md) | [RPC and API docs](rpc-and-apis.md)
 
+Keypair, faucet, transfer, and basic contract lifecycle are available for experimentation on the public testnet. Staking, governance, and some advanced or operator paths are not yet production-complete.
+
 ## Is this the full production repository or a published snapshot?
 
 This repository is a cleaned source snapshot published from the running
@@ -48,3 +50,14 @@ and the rest of [`smart-contracts`](../smart-contracts).
 The published snapshot removed a missing dev-only local dependency from
 `pqc-crypto` so the open-source tree can build cleanly outside the original
 server environment.
+
+## Are public staking and governance writes available?
+
+No. Public staking and governance reads are exposed, but unfinished write paths
+are intentionally disabled or rejected until they are production-complete.
+
+The near-term public contract is:
+
+- validator discovery returns only D-Addr-compatible validator addresses
+- public staking and governance read routes remain queryable
+- write routes and reserved `stake:` and `governance:` submit payloads are not accepted as public-ready flows

@@ -1,7 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 use base64::engine::general_purpose;
 use base64::Engine as _;
-use serde::{Deserialize, Serialize};
 #[cfg(feature = "pqc-fips204")]
 use fips204::ml_dsa_65;
 #[cfg(feature = "pqc-fips204")]
@@ -10,6 +9,7 @@ use fips204::ml_dsa_87;
 use fips204::traits::{KeyGen, SerDes};
 #[cfg(not(feature = "pqc-fips204"))]
 use rand::{rngs::OsRng, RngCore};
+use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "pqc-fips204")]
 fn generate_validator_secret_key() -> Vec<u8> {

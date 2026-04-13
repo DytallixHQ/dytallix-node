@@ -40,7 +40,7 @@ pub async fn contracts_deploy(
         .get("code")
         .and_then(|v| v.as_str())
         .ok_or(ApiError::BadRequest("missing code".to_string()))?;
-    
+
     let code = hex::decode(code_hex.trim_start_matches("0x"))
         .map_err(|_| ApiError::BadRequest("invalid hex code".to_string()))?;
 
@@ -54,7 +54,8 @@ pub async fn contracts_deploy(
         .and_then(|v| v.as_u64())
         .unwrap_or(1_000_000);
 
-    let address = ctx.wasm_runtime
+    let address = ctx
+        .wasm_runtime
         .deploy_contract(&code, deployer, gas_limit, None)
         .map_err(map_contract_error)?;
 
@@ -81,11 +82,8 @@ pub async fn contracts_call(
         .and_then(|v| v.as_str())
         .ok_or(ApiError::BadRequest("missing method".to_string()))?;
 
-    let args_hex = payload
-        .get("args")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    
+    let args_hex = payload.get("args").and_then(|v| v.as_str()).unwrap_or("");
+
     let args = hex::decode(args_hex.trim_start_matches("0x"))
         .map_err(|_| ApiError::BadRequest("invalid hex args".to_string()))?;
 
@@ -94,7 +92,8 @@ pub async fn contracts_call(
         .and_then(|v| v.as_u64())
         .unwrap_or(1_000_000);
 
-    let result = ctx.wasm_runtime
+    let result = ctx
+        .wasm_runtime
         .execute_contract(&address.to_string(), method, &args, gas_limit)
         .map_err(map_contract_error)?;
 

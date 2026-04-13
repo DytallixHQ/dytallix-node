@@ -6,10 +6,10 @@ use sha3::{Digest, Sha3_256};
 pub fn canonical_json<T: Serialize>(value: &T) -> serde_json::Result<Vec<u8>> {
     // First serialize to a serde_json::Value to normalize the structure
     let json_value = serde_json::to_value(value)?;
-    
+
     // Recursively sort all object keys
     let sorted_value = sort_json_value(json_value);
-    
+
     // Serialize to compact JSON (no extra whitespace)
     let sorted_string = serde_json::to_string(&sorted_value)?;
     Ok(sorted_string.into_bytes())

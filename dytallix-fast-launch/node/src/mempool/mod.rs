@@ -28,10 +28,23 @@ pub const TX_INVALID_SIG: &str = "TX_INVALID_SIG";
 #[derive(Debug, Clone, PartialEq)]
 pub enum RejectionReason {
     InvalidSignature,
-    NonceGap { expected: u64, got: u64 },
-    InsufficientFunds { denom: String, required: u128, available: u128 },
-    UnderpricedGas { min: u64, got: u64 },
-    OversizedTx { max: usize, got: usize },
+    NonceGap {
+        expected: u64,
+        got: u64,
+    },
+    InsufficientFunds {
+        denom: String,
+        required: u128,
+        available: u128,
+    },
+    UnderpricedGas {
+        min: u64,
+        got: u64,
+    },
+    OversizedTx {
+        max: usize,
+        got: usize,
+    },
     Duplicate(String),
     PolicyViolation(String),
     InternalError(String),
@@ -61,7 +74,11 @@ impl std::fmt::Display for RejectionReason {
             RejectionReason::NonceGap { expected, got } => {
                 write!(f, "nonce gap: expected {expected}, got {got}")
             }
-            RejectionReason::InsufficientFunds { denom, required, available } => {
+            RejectionReason::InsufficientFunds {
+                denom,
+                required,
+                available,
+            } => {
                 write!(
                     f,
                     "insufficient funds for {}: required {}, available {}",
@@ -203,7 +220,7 @@ impl Mempool {
         // Use a policy that allows all PQC algorithms for testing/development
         use dytallix_node::policy::signature_policy::SignaturePolicy;
         let policy_manager = PolicyManager::new(SignaturePolicy::allow_all_pqc());
-        
+
         Self {
             config,
             ordered_txs: BTreeSet::new(),
@@ -252,7 +269,9 @@ impl Mempool {
                         // Data messages don't require token reserves, only fee payment
                         // which is already handled above
                     }
-                    TxMessage::DmsRegister { .. } | TxMessage::DmsPing { .. } | TxMessage::DmsClaim { .. } => {
+                    TxMessage::DmsRegister { .. }
+                    | TxMessage::DmsPing { .. }
+                    | TxMessage::DmsClaim { .. } => {
                         // DMS messages don't require token reserves from sender, only fee
                     }
                 }
@@ -273,7 +292,9 @@ impl Mempool {
         if delta.is_empty() {
             return;
         }
-        let entry = reserved.entry(sender.to_string()).or_insert_with(HashMap::new);
+        let entry = reserved
+            .entry(sender.to_string())
+            .or_insert_with(HashMap::new);
         for (denom, amount) in delta {
             if *amount == 0 {
                 continue;
@@ -345,6 +366,10 @@ impl Mempool {
         // 1.5. Policy enforcement - validate signature algorithm if policy is configured
         if let Err(policy_error) = self.validate_signature_policy(&tx) {
             return Err(RejectionReason::PolicyViolation(format!("{policy_error}")));
+        }
+
+        if let Some(reason) = unsupported_reserved_payload_reason(&tx) {
+            return Err(RejectionReason::PolicyViolation(reason));
         }
 
         // 2. Duplicate check (across eligible+deferred)
@@ -878,7 +903,10 @@ fn verify_pqc_signature(tx: &Transaction, signature: &str, public_key: &str) -> 
             Err(format!("invalid signature: {details}"))
         }
         Err(PQCVerifyError::VerificationFailed { algorithm }) => {
-            tracing::warn!("❌ Signature verification failed for algorithm: {}", algorithm);
+            tracing::warn!(
+                "❌ Signature verification failed for algorithm: {}",
+                algorithm
+            );
             Err("signature verification failed".to_string())
         }
         Err(PQCVerifyError::FeatureNotCompiled { feature }) => {
@@ -962,6 +990,79 @@ impl Mempool {
             }
         }
         Ok(())
+    }
+}
+
+fn unsupported_reserved_payload_reason(tx: &Transaction) -> Option<String> {
+    let messages = tx.messages.as_ref()?;
+    for message in messages {
+        if let TxMessage::Data { data, .. } = message {
+            if data.starts_with("stake:") {
+                return Some(
+                    "staking write payloads are not supported on the generic transaction submit path; use read-only staking routes until staking is explicitly enabled end-to-end".to_string(),
+                );
+            }
+            if data.starts_with("governance:") {
+                return Some(
+                    "governance write payloads are not supported on the generic transaction submit path; use public governance read routes until governance is explicitly enabled end-to-end".to_string(),
+                );
+            }
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod policy_tests {
+    use super::{unsupported_reserved_payload_reason, Mempool, RejectionReason};
+    use crate::state::State;
+    use crate::storage::tx::{Transaction, TxMessage};
+
+    fn funded_state() -> State {
+        let mut state = State::new_for_test();
+        state.credit(
+            "dytallix1sender0000000000000000000000000000",
+            "udgt",
+            10_000_000,
+        );
+        state
+    }
+
+    fn base_tx(messages: Vec<TxMessage>) -> Transaction {
+        Transaction::base(
+            "0xpolicytest",
+            "dytallix1sender0000000000000000000000000000",
+            "dytallix1receiver00000000000000000000000000",
+            0,
+            5_000,
+            0,
+        )
+        .with_gas(5_000, 1_000)
+        .with_messages(messages)
+    }
+
+    #[test]
+    fn reserved_staking_payloads_are_rejected() {
+        let state = funded_state();
+        let tx = base_tx(vec![TxMessage::Data {
+            from: "dytallix1sender0000000000000000000000000000".to_string(),
+            data: "stake:delegate:dytallix1validator:1000".to_string(),
+        }]);
+        let mut mempool = Mempool::new();
+
+        let result = mempool.add_transaction_trusted(&state, tx);
+        assert!(matches!(result, Err(RejectionReason::PolicyViolation(_))));
+    }
+
+    #[test]
+    fn reserved_governance_payloads_are_detected() {
+        let tx = base_tx(vec![TxMessage::Data {
+            from: "dytallix1sender0000000000000000000000000000".to_string(),
+            data: "governance:vote:7:yes".to_string(),
+        }]);
+
+        let reason = unsupported_reserved_payload_reason(&tx).unwrap();
+        assert!(reason.contains("governance write payloads"));
     }
 }
 

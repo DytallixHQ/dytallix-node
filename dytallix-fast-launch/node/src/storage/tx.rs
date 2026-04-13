@@ -5,14 +5,14 @@ pub use dytallix_pqc::SignatureAlgorithm;
 // Helper module for u128 serialization with serde_json
 mod u128_serde {
     use serde::{Deserialize, Deserializer, Serializer};
-    
+
     pub fn serialize<S>(value: &u128, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         serializer.serialize_str(&value.to_string())
     }
-    
+
     pub fn deserialize<'de, D>(deserializer: D) -> Result<u128, D::Error>
     where
         D: Deserializer<'de>,
@@ -74,7 +74,7 @@ pub enum TxMessage {
         from: String,
         beneficiary: String,
         #[serde(with = "u128_serde")]
-        period: u128, 
+        period: u128,
     },
     DmsPing {
         from: String,

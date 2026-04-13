@@ -44,7 +44,10 @@ fn test_node_verification_with_cli_format() {
     let cli_signature_hex = hex::encode(&signature);
     let sig_bytes = hex::decode(&cli_signature_hex).expect("Failed to decode hex");
 
-    assert_eq!(sig_bytes, signature, "hex roundtrip should preserve signature");
+    assert_eq!(
+        sig_bytes, signature,
+        "hex roundtrip should preserve signature"
+    );
     assert!(
         ActivePQC::verify(&public_key, hash.as_slice(), &sig_bytes),
         "node verification should accept CLI-generated detached signatures"
@@ -82,7 +85,9 @@ fn test_signed_tx_base64_transport() {
         version: 1,
     };
 
-    signed_tx.verify().expect("SignedTx verification should succeed");
+    signed_tx
+        .verify()
+        .expect("SignedTx verification should succeed");
 
     println!("✅ Base64 transport is compatible with SignedTx verification");
 }

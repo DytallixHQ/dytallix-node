@@ -108,5 +108,7 @@ pub fn validator_address() -> Option<&'static str> {
 }
 
 pub fn validator_algorithm() -> Option<&'static str> {
-    VALIDATOR_ALGORITHM.get().map(|algorithm| algorithm.as_str())
+    VALIDATOR_ALGORITHM
+        .get()
+        .map(|algorithm| algorithm.as_str())
 }

@@ -89,7 +89,14 @@ impl WasmEngine {
         let start = ptr as u32 as usize;
         let end = start + len as usize;
         if end > data.len() {
-            eprintln!("Out of bounds read: ptr={}, len={}, start={}, end={}, data_len={}", ptr, len, start, end, data.len());
+            eprintln!(
+                "Out of bounds read: ptr={}, len={}, start={}, end={}, data_len={}",
+                ptr,
+                len,
+                start,
+                end,
+                data.len()
+            );
             return Err(anyhow!("out of bounds read"));
         }
         Ok(data[start..end].to_vec())

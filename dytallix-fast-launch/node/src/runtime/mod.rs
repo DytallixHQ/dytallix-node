@@ -1,11 +1,11 @@
 pub mod bridge;
+pub mod dead_man_switch;
 pub mod emission;
 pub mod fee_burn;
 pub mod governance;
 #[cfg(feature = "oracle")]
 pub mod oracle;
 pub mod staking;
-pub mod dead_man_switch;
 #[cfg(feature = "contracts")]
 pub mod wasm;
 

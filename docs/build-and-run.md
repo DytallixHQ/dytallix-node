@@ -66,6 +66,37 @@ intend to keep. Do not carry forward temporary incident workarounds such as
 `DYTALLIX_DEFAULT_GAS_LIMIT=8000` unless you have explicitly revalidated that
 override against current source.
 
+Choose one process manager path and keep it canonical. Do not run the same node
+from both PM2 and systemd.
+
+For `systemd`:
+
+```bash
+cp deploy/systemd/dytallix-fast-node.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable dytallix-fast-node
+systemctl restart dytallix-fast-node
+systemctl status dytallix-fast-node
+```
+
+For `pm2`:
+
+```bash
+pm2 start deploy/pm2/dytallix-fast-node.ecosystem.cjs
+pm2 save
+pm2 status dytallix-fast-node
+```
+
+Smoke-check the deployed public contract after restart:
+
+```bash
+curl --fail http://127.0.0.1:3030/status
+curl --fail http://127.0.0.1:3030/api/capabilities
+```
+
+If the rebuilt binary is not the process serving those endpoints, the deployment
+is still drifting from source.
+
 ## Core Node
 
 Build the core chain binary:

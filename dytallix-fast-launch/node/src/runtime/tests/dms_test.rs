@@ -15,7 +15,8 @@ fn test_dms_flow() {
     let current_block = 1000;
 
     // Register
-    dms.register(owner, beneficiary, period, current_block).unwrap();
+    dms.register(owner, beneficiary, period, current_block)
+        .unwrap();
 
     // Check config
     let config = dms.load_config(owner).unwrap();
@@ -44,7 +45,7 @@ fn test_dms_flow() {
 
     // Validate claim after ping (should fail now)
     let claim_block = current_block + period + 1; // 1101
-    // New deadline is ping_block + period = 1050 + 100 = 1150
+                                                  // New deadline is ping_block + period = 1050 + 100 = 1150
     let res = dms.validate_claim(owner, beneficiary, claim_block);
     assert!(res.is_err()); // 1101 < 1150
 

@@ -370,7 +370,11 @@ impl EmissionEngine {
     }
 
     /// Process emission for a single block (for testing)
-    pub fn process_block_emission(&mut self, height: u64, _state: &mut crate::state::State) -> Result<EmissionEvent, String> {
+    pub fn process_block_emission(
+        &mut self,
+        height: u64,
+        _state: &mut crate::state::State,
+    ) -> Result<EmissionEvent, String> {
         // Calculate emission for this block
         let total_emission = self.calculate_per_block_emission(height);
         let pool_distributions = self.calculate_pool_distributions(total_emission);

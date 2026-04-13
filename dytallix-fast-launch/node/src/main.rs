@@ -11,7 +11,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::time::interval;
-use tower_http::cors::{CorsLayer, Any};
+use tower_http::cors::{Any, CorsLayer};
 
 // Replace crate:: module imports with library crate path so binary can access lib modules
 use dytallix_fast_node::alerts::{load_alerts_config, AlertsEngine, NodeMetricsGatherer};
@@ -21,8 +21,8 @@ use dytallix_fast_node::mempool::Mempool;
 use dytallix_fast_node::metrics::{parse_metrics_config, MetricsServer};
 use dytallix_fast_node::rpc::{self, RpcContext};
 use dytallix_fast_node::runtime::bridge; // import bridge module for validator init
-use dytallix_fast_node::runtime::fee_burn::FeeBurnEngine;
 use dytallix_fast_node::runtime::emission::EmissionEngine;
+use dytallix_fast_node::runtime::fee_burn::FeeBurnEngine;
 use dytallix_fast_node::runtime::governance::GovernanceConfig;
 use dytallix_fast_node::runtime::governance::GovernanceModule;
 use dytallix_fast_node::runtime::staking::StakingModule;
@@ -104,27 +104,36 @@ async fn main() -> anyhow::Result<()> {
         // Prefund test account for E2E testing (always ensure funded)
         let test_addr = "dytallix163c72b98928b743df68324e4569e84d817a9a78b";
         let target_balance: u128 = 10_000_000_000;
-        
+
         // Prefund DGT (governance token)
         let current_dgt = st.balance_of(test_addr, "udgt");
         if current_dgt < target_balance {
             st.credit(test_addr, "udgt", target_balance - current_dgt);
-            eprintln!("Prefunded test account {} with {} udgt", test_addr, target_balance);
+            eprintln!(
+                "Prefunded test account {} with {} udgt",
+                test_addr, target_balance
+            );
         }
-        
+
         // Prefund DRT (reward token)
         let current_drt = st.balance_of(test_addr, "udrt");
         if current_drt < target_balance {
             st.credit(test_addr, "udrt", target_balance - current_drt);
-            eprintln!("Prefunded test account {} with {} udrt", test_addr, target_balance);
+            eprintln!(
+                "Prefunded test account {} with {} udrt",
+                test_addr, target_balance
+            );
         }
-        
+
         // Also prefund the testkey account for easier testing
         let testkey_addr = "dytallix125074e67f966c5c9a0538381c2398a8966cda568";
         let testkey_balance: u128 = 1_000_000_000; // 1000 tokens each
         st.credit(testkey_addr, "udgt", testkey_balance);
         st.credit(testkey_addr, "udrt", testkey_balance);
-        eprintln!("Prefunded testkey account {} with {} udgt and udrt", testkey_addr, testkey_balance);
+        eprintln!(
+            "Prefunded testkey account {} with {} udgt and udrt",
+            testkey_addr, testkey_balance
+        );
     }
 
     // Prefund governance validator accounts (E2E) if governance enabled
@@ -545,15 +554,19 @@ async fn main() -> anyhow::Result<()> {
                 continue;
             }
             let mut block = Block::new(height, parent, ts, success_txs.clone());
-            
+
             // Add pending asset hashes to the block
             let pending = producer_ctx.pending_assets.lock().unwrap();
             if !pending.is_empty() {
                 block.header.asset_hashes = pending.clone();
-                eprintln!("[Block Producer] Including {} asset hash(es) in block #{}", pending.len(), height);
+                eprintln!(
+                    "[Block Producer] Including {} asset hash(es) in block #{}",
+                    pending.len(),
+                    height
+                );
             }
             drop(pending); // Release lock before clearing
-            
+
             for (idx, r) in receipts.iter_mut().enumerate() {
                 if r.status == TxStatus::Success {
                     r.block_height = Some(height);
@@ -561,7 +574,7 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
             let _ = producer_ctx.storage.put_block(&block, &receipts);
-            
+
             // Clear pending assets after they've been included in a block
             producer_ctx.pending_assets.lock().unwrap().clear();
 
@@ -662,6 +675,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/ai/latency", get(rpc::ai::ai_latency))
         .route("/metrics", get(rpc::metrics_export))
         .route("/stats", get(rpc::stats))
+        .route("/capabilities", get(rpc::public_capabilities))
+        .route("/api/capabilities", get(rpc::public_capabilities))
         .route("/status", get(rpc::status))
         .route("/health", get(rpc::health))
         .route("/peers", get(rpc::peers))
@@ -774,15 +789,15 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/balance/:addr", get(rpc::get_balance));
 
     app = app.layer(Extension(ctx));
-    
+
     // Add CORS middleware to allow frontend requests
     app = app.layer(
         CorsLayer::new()
             .allow_origin(Any)
             .allow_methods(Any)
-            .allow_headers(Any)
+            .allow_headers(Any),
     );
-    
+
     if ws_enabled {
         app = app.route("/ws", get(ws_handler).layer(Extension(ws_hub)));
     }

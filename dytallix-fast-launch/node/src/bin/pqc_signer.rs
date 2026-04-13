@@ -1,7 +1,7 @@
-use std::env;
-use fips204::ml_dsa_87;
-use fips204::traits::{KeyGen, Signer, SerDes};
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
+use fips204::ml_dsa_87;
+use fips204::traits::{KeyGen, SerDes, Signer};
+use std::env;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -18,7 +18,11 @@ fn main() {
     match command.as_str() {
         "keygen" => {
             let (pk, sk) = ml_dsa_87::KG::try_keygen().unwrap();
-            println!("{} {}", B64.encode(sk.into_bytes()), B64.encode(pk.into_bytes()));
+            println!(
+                "{} {}",
+                B64.encode(sk.into_bytes()),
+                B64.encode(pk.into_bytes())
+            );
         }
         "sign" => {
             if args.len() < 4 {
@@ -40,7 +44,7 @@ fn main() {
             }
             let mut sk_arr = [0u8; ml_dsa_87::SK_LEN];
             sk_arr.copy_from_slice(&sk_bytes_vec);
-            
+
             let sk = ml_dsa_87::PrivateKey::try_from_bytes(sk_arr).expect("Invalid SK bytes");
 
             // ML-DSA supports an optional context string for domain separation.

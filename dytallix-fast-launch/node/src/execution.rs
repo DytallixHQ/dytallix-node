@@ -139,7 +139,14 @@ pub fn execute_transaction(
     }
 
     // Otherwise, fall back to single-message execution (legacy path)
-    execute_single_message_transaction(tx, state, block_height, tx_index, gas_schedule, fee_burn_engine)
+    execute_single_message_transaction(
+        tx,
+        state,
+        block_height,
+        tx_index,
+        gas_schedule,
+        fee_burn_engine,
+    )
 }
 
 /// Execute a transaction with multiple messages
@@ -177,7 +184,15 @@ fn execute_multi_message_transaction(
         Ok(fee) => fee,
         Err(error) => {
             return ExecutionResult {
-                receipt: create_failed_receipt(tx, 0, gas_limit, gas_price, error.to_string(), block_height, tx_index),
+                receipt: create_failed_receipt(
+                    tx,
+                    0,
+                    gas_limit,
+                    gas_price,
+                    error.to_string(),
+                    block_height,
+                    tx_index,
+                ),
                 state_changes: Vec::new(),
                 gas_used: 0,
                 success: false,
@@ -187,9 +202,18 @@ fn execute_multi_message_transaction(
 
     let sender_balance = state.balance_of(&tx.from, "udgt");
     if sender_balance < upfront_fee {
-        let err_msg = format!("InsufficientFunds: required {upfront_fee}, available {sender_balance}");
+        let err_msg =
+            format!("InsufficientFunds: required {upfront_fee}, available {sender_balance}");
         return ExecutionResult {
-            receipt: create_failed_receipt(tx, 0, gas_limit, gas_price, err_msg, block_height, tx_index),
+            receipt: create_failed_receipt(
+                tx,
+                0,
+                gas_limit,
+                gas_price,
+                err_msg,
+                block_height,
+                tx_index,
+            ),
             state_changes: Vec::new(),
             gas_used: 0,
             success: false,
@@ -204,7 +228,15 @@ fn execute_multi_message_transaction(
     // Step 6: Consume minimal overhead gas
     if let Err(_) = ctx.consume_gas(1, "tx_overhead") {
         return ExecutionResult {
-            receipt: create_failed_receipt(tx, ctx.gas_used(), gas_limit, gas_price, "OutOfGas".to_string(), block_height, tx_index),
+            receipt: create_failed_receipt(
+                tx,
+                ctx.gas_used(),
+                gas_limit,
+                gas_price,
+                "OutOfGas".to_string(),
+                block_height,
+                tx_index,
+            ),
             state_changes: Vec::new(),
             gas_used: ctx.gas_used(),
             success: false,
@@ -213,22 +245,39 @@ fn execute_multi_message_transaction(
 
     // Step 7: Calculate intrinsic gas
     let tx_size = estimate_transaction_size(tx);
-    let intrinsic_gas = match intrinsic_gas(&TxKind::Transfer, tx_size, messages.len(), gas_schedule) {
-        Ok(gas) => gas,
-        Err(error) => {
-            return ExecutionResult {
-                receipt: create_failed_receipt(tx, ctx.gas_used(), gas_limit, gas_price, error.to_string(), block_height, tx_index),
-                state_changes: Vec::new(),
-                gas_used: ctx.gas_used(),
-                success: false,
-            };
-        }
-    };
+    let intrinsic_gas =
+        match intrinsic_gas(&TxKind::Transfer, tx_size, messages.len(), gas_schedule) {
+            Ok(gas) => gas,
+            Err(error) => {
+                return ExecutionResult {
+                    receipt: create_failed_receipt(
+                        tx,
+                        ctx.gas_used(),
+                        gas_limit,
+                        gas_price,
+                        error.to_string(),
+                        block_height,
+                        tx_index,
+                    ),
+                    state_changes: Vec::new(),
+                    gas_used: ctx.gas_used(),
+                    success: false,
+                };
+            }
+        };
 
     if let Err(_) = ctx.consume_gas(intrinsic_gas, "intrinsic") {
         ctx.revert_state_changes(state);
         return ExecutionResult {
-            receipt: create_failed_receipt(tx, ctx.gas_used(), gas_limit, gas_price, "OutOfGas".to_string(), block_height, tx_index),
+            receipt: create_failed_receipt(
+                tx,
+                ctx.gas_used(),
+                gas_limit,
+                gas_price,
+                "OutOfGas".to_string(),
+                block_height,
+                tx_index,
+            ),
             state_changes: Vec::new(),
             gas_used: ctx.gas_used(),
             success: false,
@@ -241,7 +290,15 @@ fn execute_multi_message_transaction(
             // Out of gas during execution - revert state but keep fee
             ctx.revert_state_changes(state);
             return ExecutionResult {
-                receipt: create_failed_receipt(tx, ctx.gas_used(), gas_limit, gas_price, format!("Execution failed at message {}: {}", idx, e), block_height, tx_index),
+                receipt: create_failed_receipt(
+                    tx,
+                    ctx.gas_used(),
+                    gas_limit,
+                    gas_price,
+                    format!("Execution failed at message {}: {}", idx, e),
+                    block_height,
+                    tx_index,
+                ),
                 state_changes: Vec::new(),
                 gas_used: ctx.gas_used(),
                 success: false,
@@ -260,7 +317,14 @@ fn execute_multi_message_transaction(
         success: true,
         state_changes,
         gas_used: ctx.gas_used(),
-        receipt: create_success_receipt(tx, ctx.gas_used(), gas_limit, gas_price, block_height, tx_index),
+        receipt: create_success_receipt(
+            tx,
+            ctx.gas_used(),
+            gas_limit,
+            gas_price,
+            block_height,
+            tx_index,
+        ),
     }
 }
 
@@ -272,9 +336,14 @@ fn execute_message(
     block_height: u64,
 ) -> Result<(), GasError> {
     use crate::storage::tx::TxMessage;
-    
+
     match msg {
-        TxMessage::Send { from, to, denom, amount } => {
+        TxMessage::Send {
+            from,
+            to,
+            denom,
+            amount,
+        } => {
             // Charge gas for KV operations
             ctx.consume_gas(40, "kv_read_from")?;
             ctx.consume_gas(40, "kv_read_to")?;
@@ -297,8 +366,18 @@ fn execute_message(
             let sender_new_balance = sender_old_balance - amount;
             let recipient_new_balance = recipient_old_balance + amount;
 
-            ctx.record_state_change(from.clone(), denom.clone(), sender_old_balance, sender_new_balance);
-            ctx.record_state_change(to.clone(), denom.clone(), recipient_old_balance, recipient_new_balance);
+            ctx.record_state_change(
+                from.clone(),
+                denom.clone(),
+                sender_old_balance,
+                sender_new_balance,
+            );
+            ctx.record_state_change(
+                to.clone(),
+                denom.clone(),
+                recipient_old_balance,
+                recipient_new_balance,
+            );
 
             // Apply the transfer
             state.set_balance(from, denom, sender_new_balance);
@@ -310,44 +389,57 @@ fn execute_message(
             // Charge gas proportional to data size (1 gas per byte)
             let data_size = data.len() as u64;
             ctx.consume_gas(data_size, "data_storage")?;
-            
+
             // Data messages don't modify state - they're just anchored on-chain
             // The data is already stored in the transaction itself
             Ok(())
         }
-        TxMessage::DmsRegister { from, beneficiary, period } => {
+        TxMessage::DmsRegister {
+            from,
+            beneficiary,
+            period,
+        } => {
             ctx.consume_gas(1000, "dms_register")?;
-            let dms = crate::runtime::dead_man_switch::DeadManSwitchModule::new(state.storage.clone());
+            let dms =
+                crate::runtime::dead_man_switch::DeadManSwitchModule::new(state.storage.clone());
             dms.register(from, beneficiary, *period as u64, block_height)
                 .map_err(|e| GasError::Custom(e))?;
             Ok(())
         }
         TxMessage::DmsPing { from } => {
             ctx.consume_gas(500, "dms_ping")?;
-            let dms = crate::runtime::dead_man_switch::DeadManSwitchModule::new(state.storage.clone());
+            let dms =
+                crate::runtime::dead_man_switch::DeadManSwitchModule::new(state.storage.clone());
             dms.ping(from, block_height)
                 .map_err(|e| GasError::Custom(e))?;
             Ok(())
         }
         TxMessage::DmsClaim { from, owner } => {
             ctx.consume_gas(2000, "dms_claim")?;
-            let dms = crate::runtime::dead_man_switch::DeadManSwitchModule::new(state.storage.clone());
-            let beneficiary = dms.validate_claim(owner, from, block_height)
+            let dms =
+                crate::runtime::dead_man_switch::DeadManSwitchModule::new(state.storage.clone());
+            let beneficiary = dms
+                .validate_claim(owner, from, block_height)
                 .map_err(|e| GasError::Custom(e))?;
-            
+
             // Transfer all funds
             let balances = state.balances_of(owner);
             for (denom, amount) in balances {
                 if amount > 0 {
                     let owner_old = amount;
                     let beneficiary_old = state.balance_of(&beneficiary, &denom);
-                    
+
                     let owner_new = 0;
                     let beneficiary_new = beneficiary_old + amount;
-                    
+
                     ctx.record_state_change(owner.clone(), denom.clone(), owner_old, owner_new);
-                    ctx.record_state_change(beneficiary.clone(), denom.clone(), beneficiary_old, beneficiary_new);
-                    
+                    ctx.record_state_change(
+                        beneficiary.clone(),
+                        denom.clone(),
+                        beneficiary_old,
+                        beneficiary_new,
+                    );
+
                     state.set_balance(owner, &denom, owner_new);
                     state.set_balance(&beneficiary, &denom, beneficiary_new);
                 }
@@ -521,12 +613,7 @@ fn execute_single_message_transaction(
 
     // Step 8: Success - Process fee burning if enabled
     if let Some(engine) = fee_burn_engine {
-        let _ = engine.process_fee_burn(
-            tx.hash.clone(),
-            block_height,
-            upfront_fee,
-            state,
-        );
+        let _ = engine.process_fee_burn(tx.hash.clone(), block_height, upfront_fee, state);
         // Note: Fee burning errors are non-fatal and don't affect transaction success
     }
 

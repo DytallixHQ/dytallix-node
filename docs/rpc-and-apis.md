@@ -2,6 +2,8 @@
 
 [Docs hub](README.md) | [Repository map](repository-map.md) | [Build and run](build-and-run.md)
 
+Keypair, faucet, transfer, and basic contract lifecycle are available for experimentation on the public testnet. Staking, governance, and some advanced or operator paths are not yet production-complete.
+
 ## Public Node RPC
 
 The main public-node protocol reference is:
@@ -34,6 +36,13 @@ The fast-node RPC reference currently documents these major surfaces:
 
 Use the nested RPC doc for request shapes and examples rather than duplicating
 that protocol surface here.
+
+Compatible node deployments now expose a machine-readable public contract at
+`GET /api/capabilities`.
+
+Stake and governance write routes are intentionally not public-complete. Public
+read routes remain available, while unfinished write paths should return
+explicit unsupported errors until they are ready end to end.
 
 ## PulseGuard
 

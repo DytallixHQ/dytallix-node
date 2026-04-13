@@ -49,9 +49,14 @@ fn test_cli_signature_verification() {
 
     println!("SignedTx created:");
     println!("  signature (base64): {} chars", signed_tx.signature.len());
-    println!("  public_key (base64): {} chars", signed_tx.public_key.len());
+    println!(
+        "  public_key (base64): {} chars",
+        signed_tx.public_key.len()
+    );
 
-    signed_tx.verify().expect("node verification should succeed");
+    signed_tx
+        .verify()
+        .expect("node verification should succeed");
     assert!(
         ActivePQC::verify(&public_key, &hash, &signature_bytes),
         "Detached signature should verify against the transaction hash"
@@ -124,7 +129,10 @@ fn test_real_world_transaction_flow() {
     let hash = sha3_256(&canonical_bytes);
     let signature_bytes = ActivePQC::sign(&secret_key, &hash);
     println!("3. Transaction signed");
-    println!("   Canonical JSON: {}", String::from_utf8_lossy(&canonical_bytes));
+    println!(
+        "   Canonical JSON: {}",
+        String::from_utf8_lossy(&canonical_bytes)
+    );
     println!("   Hash: {}", hex::encode(&hash));
     println!("   Signature length: {} bytes", signature_bytes.len());
 
@@ -137,7 +145,10 @@ fn test_real_world_transaction_flow() {
     };
     println!("4. SignedTx created for RPC submission");
     println!("   Signature (base64): {} chars", signed_tx.signature.len());
-    println!("   Public key (base64): {} chars", signed_tx.public_key.len());
+    println!(
+        "   Public key (base64): {} chars",
+        signed_tx.public_key.len()
+    );
 
     println!("5. Node validating signature...");
     signed_tx

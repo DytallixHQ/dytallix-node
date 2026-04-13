@@ -1,0 +1,15 @@
+name: Public Live Deployment
+
+on:
+  workflow_dispatch:
+
+jobs:
+  public-live-deployment:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Verify live public deployment contract
+        run: python3 scripts/check_live_public_deployment.py

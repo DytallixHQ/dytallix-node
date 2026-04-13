@@ -5,7 +5,7 @@ use axum::{Extension, Json};
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine; // for new decode API
 use fips204::ml_dsa_87; // Dilithium5 equivalent
-use fips204::traits::{Verifier, SerDes};
+use fips204::traits::{SerDes, Verifier};
 use serde::Deserialize;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -38,22 +38,22 @@ pub fn verify_sig(payload: &str, signature: &str, pubkey: &str) -> bool {
         if pk_bytes.len() != 2592 {
             return false;
         }
-        
+
         let mut pk_arr = [0u8; 2592];
         pk_arr.copy_from_slice(&pk_bytes);
-        
+
         if let Ok(pk) = ml_dsa_87::PublicKey::try_from_bytes(pk_arr) {
-             let ctx = b"dytallix-oracle";
-             
-             // ML-DSA-87 Sig size observed: 4627
-             if sig_bytes.len() != 4627 {
-                 return false;
-             }
-             let mut sig_arr = [0u8; 4627];
-             sig_arr.copy_from_slice(&sig_bytes);
-             
-             // Verify using the byte array directly since try_sign returns [u8; 4627]
-             return pk.verify(payload.as_bytes(), &sig_arr, ctx);
+            let ctx = b"dytallix-oracle";
+
+            // ML-DSA-87 Sig size observed: 4627
+            if sig_bytes.len() != 4627 {
+                return false;
+            }
+            let mut sig_arr = [0u8; 4627];
+            sig_arr.copy_from_slice(&sig_bytes);
+
+            // Verify using the byte array directly since try_sign returns [u8; 4627]
+            return pk.verify(payload.as_bytes(), &sig_arr, ctx);
         }
     }
     false

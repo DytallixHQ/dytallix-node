@@ -187,7 +187,7 @@ impl WasmRuntime {
         let mut ctx = self.engine.env().context();
         ctx.input = args.to_vec();
         // Update context with current block info if available (placeholder for now)
-        ctx.caller = "caller_placeholder".to_string(); 
+        ctx.caller = "caller_placeholder".to_string();
         self.engine.set_context(ctx);
 
         // Execute the method
@@ -199,10 +199,14 @@ impl WasmRuntime {
         // We support functions returning nothing (void) or i32/i64 (status)
         let ty = func.ty(&store);
         let mut results = vec![wasmtime::Val::I32(0); ty.results().len()];
-        
+
         if let Err(e) = func.call(&mut store, &[], &mut results) {
             let logs = self.engine.env().take_logs();
-            return Err(anyhow!("WASM execution failed: {}\nLogs:\n{}", e, logs.join("\n")));
+            return Err(anyhow!(
+                "WASM execution failed: {}\nLogs:\n{}",
+                e,
+                logs.join("\n")
+            ));
         }
 
         // Retrieve output from env

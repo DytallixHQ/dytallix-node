@@ -130,12 +130,12 @@ impl HostEnv {
     pub fn take_logs(&self) -> Vec<String> {
         self.inner.logs.lock().unwrap().drain(..).collect()
     }
-    
+
     pub fn write_output(&self, data: &[u8]) {
         let mut out = self.inner.output.lock().unwrap();
         *out = data.to_vec();
     }
-    
+
     pub fn take_output(&self) -> Vec<u8> {
         let mut out = self.inner.output.lock().unwrap();
         let res = out.clone();

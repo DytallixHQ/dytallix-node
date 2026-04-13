@@ -26,8 +26,8 @@ pub struct FeeBurnConfig {
 impl Default for FeeBurnConfig {
     fn default() -> Self {
         Self {
-            burn_rate_bps: 2500, // 25% default burn rate
-            min_burn_threshold: 1000, // 1000 micro-tokens minimum
+            burn_rate_bps: 2500,            // 25% default burn rate
+            min_burn_threshold: 1000,       // 1000 micro-tokens minimum
             burn_token: "udgt".to_string(), // Burn DGT fees by default
             enabled: true,
         }
@@ -93,7 +93,7 @@ impl FeeBurnEngine {
 
         // Calculate burn amount
         let burn_amount = (fee_paid * self.config.burn_rate_bps as u128) / 10000;
-        
+
         if burn_amount == 0 {
             return Ok(None);
         }
@@ -112,7 +112,7 @@ impl FeeBurnEngine {
 
         // Note: In a real implementation, we would burn tokens from the treasury/fee pool
         // For now, we just track the burn amount for accounting
-        
+
         // Create burn event
         let burn_event = FeeBurnEvent {
             tx_hash,
@@ -170,14 +170,10 @@ impl FeeBurnEngine {
         let total_events = self.burn_events.len();
         let total_udgt_burned = self.get_total_burned("udgt");
         let total_udrt_burned = self.get_total_burned("udrt");
-        
-        let total_fees_processed = self.burn_events.iter()
-            .map(|e| e.fee_paid)
-            .sum::<u128>();
 
-        let total_burned_all = self.burn_events.iter()
-            .map(|e| e.burn_amount)
-            .sum::<u128>();
+        let total_fees_processed = self.burn_events.iter().map(|e| e.fee_paid).sum::<u128>();
+
+        let total_burned_all = self.burn_events.iter().map(|e| e.burn_amount).sum::<u128>();
 
         let effective_burn_rate = if total_fees_processed > 0 {
             (total_burned_all * 10000) / total_fees_processed
@@ -233,12 +229,14 @@ mod tests {
         let mut engine = FeeBurnEngine::new();
         let mut state = create_test_state();
 
-        let result = engine.process_fee_burn(
-            "test_tx_1".to_string(),
-            100,
-            10000, // 10,000 micro-tokens fee
-            &mut state
-        ).unwrap();
+        let result = engine
+            .process_fee_burn(
+                "test_tx_1".to_string(),
+                100,
+                10000, // 10,000 micro-tokens fee
+                &mut state,
+            )
+            .unwrap();
 
         assert!(result.is_some());
         let event = result.unwrap();
@@ -252,12 +250,14 @@ mod tests {
         let mut engine = FeeBurnEngine::new();
         let mut state = create_test_state();
 
-        let result = engine.process_fee_burn(
-            "test_tx_1".to_string(),
-            100,
-            500, // Below default threshold of 1000
-            &mut state
-        ).unwrap();
+        let result = engine
+            .process_fee_burn(
+                "test_tx_1".to_string(),
+                100,
+                500, // Below default threshold of 1000
+                &mut state,
+            )
+            .unwrap();
 
         assert!(result.is_none());
         assert_eq!(engine.get_total_burned("udgt"), 0);
@@ -272,12 +272,9 @@ mod tests {
         let mut engine = FeeBurnEngine::with_config(config);
         let mut state = create_test_state();
 
-        let result = engine.process_fee_burn(
-            "test_tx_1".to_string(),
-            100,
-            10000,
-            &mut state
-        ).unwrap();
+        let result = engine
+            .process_fee_burn("test_tx_1".to_string(), 100, 10000, &mut state)
+            .unwrap();
 
         assert!(result.is_none());
         assert_eq!(engine.get_total_burned("udgt"), 0);
@@ -286,7 +283,7 @@ mod tests {
     #[test]
     fn test_config_update() {
         let mut engine = FeeBurnEngine::new();
-        
+
         let new_config = FeeBurnConfig {
             burn_rate_bps: 5000, // 50%
             burn_token: "udrt".to_string(),
@@ -301,7 +298,7 @@ mod tests {
     #[test]
     fn test_invalid_config_update() {
         let mut engine = FeeBurnEngine::new();
-        
+
         let invalid_config = FeeBurnConfig {
             burn_rate_bps: 15000, // >100%
             ..Default::default()
@@ -316,8 +313,12 @@ mod tests {
         let mut state = create_test_state();
 
         // Process a few burns
-        engine.process_fee_burn("tx1".to_string(), 100, 10000, &mut state).unwrap();
-        engine.process_fee_burn("tx2".to_string(), 101, 20000, &mut state).unwrap();
+        engine
+            .process_fee_burn("tx1".to_string(), 100, 10000, &mut state)
+            .unwrap();
+        engine
+            .process_fee_burn("tx2".to_string(), 101, 20000, &mut state)
+            .unwrap();
 
         let stats = engine.get_burn_stats();
         assert_eq!(stats.total_events, 2);

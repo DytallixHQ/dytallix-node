@@ -1,11 +1,11 @@
 use crate::crypto::PQCManager;
 use crate::types::Amount as Tokens;
 use base64::Engine as _;
+use chrono; // for block timestamps
 use futures_util::{SinkExt, StreamExt};
 use log::{error, info}; // removed unused warn import
-use rand; // for block hash generation
-use chrono; // for block timestamps
 use once_cell::sync::Lazy;
+use rand; // for block hash generation
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -260,17 +260,18 @@ pub async fn start_api_server() -> Result<(), Box<dyn std::error::Error>> {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(10));
         loop {
             interval.tick().await;
-            
+
             // Get current height and create next block
             let current_height = storage_clone.get_height().unwrap_or(0);
             let next_height = current_height + 1;
-            
+
             // Create a new block
             let block = crate::types::Block {
                 header: crate::types::BlockHeader {
                     number: next_height,
                     parent_hash: if current_height == 0 {
-                        "0x0000000000000000000000000000000000000000000000000000000000000000".to_string()
+                        "0x0000000000000000000000000000000000000000000000000000000000000000"
+                            .to_string()
                     } else {
                         format!("0x{:064x}", rand::random::<u64>())
                     },
@@ -289,15 +290,15 @@ pub async fn start_api_server() -> Result<(), Box<dyn std::error::Error>> {
                 },
                 transactions: vec![], // Empty block for now
             };
-            
+
             // Store the block
             if let Err(e) = storage_clone._store_block(&block) {
                 error!("Failed to store block {}: {}", next_height, e);
                 continue;
             }
-            
+
             info!("Created and stored block #{}", next_height);
-            
+
             // Send WebSocket notification
             let block_info = BlockInfo {
                 number: next_height,
@@ -306,7 +307,7 @@ pub async fn start_api_server() -> Result<(), Box<dyn std::error::Error>> {
                 timestamp: block.header.timestamp,
                 transactions: vec![],
                 size: 0,
-                gas_used: 0, // Default value since we don't have gas tracking yet
+                gas_used: 0,        // Default value since we don't have gas tracking yet
                 gas_limit: 1000000, // Default value
             };
             let _ = ws_tx_clone.send(WebSocketMessage::new_block(&block_info));
@@ -564,26 +565,11 @@ pub async fn start_api_server() -> Result<(), Box<dyn std::error::Error>> {
                         )
                     }
                 };
-                    let sig_bytes = match hex::decode(sig.data) {
-                        Ok(b) => b,
-                        Err(_) => {
-                            return Ok::<_, warp::Rejection>(
-                                warp::reply::with_status(
-                                    warp::reply::json(&ApiResponse::<()> {
-                                        success: false,
-                                        data: None,
-                                        error: Some("signature_invalid".into()),
-                                    }),
-                                    warp::http::StatusCode::BAD_REQUEST,
-                                )
-                                .into_response(),
-                            )
-                        }
-                    };
-                    let pk_bytes = match hex::decode(sig.public_key) {
-                        Ok(b) => b,
-                        Err(_) => {
-                            return Ok(warp::reply::with_status(
+                let sig_bytes = match hex::decode(sig.data) {
+                    Ok(b) => b,
+                    Err(_) => {
+                        return Ok::<_, warp::Rejection>(
+                            warp::reply::with_status(
                                 warp::reply::json(&ApiResponse::<()> {
                                     success: false,
                                     data: None,
@@ -591,34 +577,46 @@ pub async fn start_api_server() -> Result<(), Box<dyn std::error::Error>> {
                                 }),
                                 warp::http::StatusCode::BAD_REQUEST,
                             )
-                            .into_response())
-                        }
-                    };
-                    let pqc = PQCManager::new().map_err(|_| ()).unwrap();
-                    let sig_wrapper = crate::crypto::PQCSignature {
-                        signature: sig_bytes.clone(),
-                        algorithm: sig.algorithm.clone(),
-                        nonce: 0,
-                        timestamp: 0,
-                    };
-                    match pqc.verify_signature(
-                        tx.signing_message().as_slice(),
-                        &sig_wrapper,
-                        &pk_bytes,
-                    ) {
-                        Ok(valid) if valid => {}
-                        _ => {
-                            return Ok(warp::reply::with_status(
-                                warp::reply::json(&ApiResponse::<()> {
-                                    success: false,
-                                    data: None,
-                                    error: Some("signature_invalid".into()),
-                                }),
-                                warp::http::StatusCode::BAD_REQUEST,
-                            )
-                            .into_response());
-                        }
+                            .into_response(),
+                        )
                     }
+                };
+                let pk_bytes = match hex::decode(sig.public_key) {
+                    Ok(b) => b,
+                    Err(_) => {
+                        return Ok(warp::reply::with_status(
+                            warp::reply::json(&ApiResponse::<()> {
+                                success: false,
+                                data: None,
+                                error: Some("signature_invalid".into()),
+                            }),
+                            warp::http::StatusCode::BAD_REQUEST,
+                        )
+                        .into_response())
+                    }
+                };
+                let pqc = PQCManager::new().map_err(|_| ()).unwrap();
+                let sig_wrapper = crate::crypto::PQCSignature {
+                    signature: sig_bytes.clone(),
+                    algorithm: sig.algorithm.clone(),
+                    nonce: 0,
+                    timestamp: 0,
+                };
+                match pqc.verify_signature(tx.signing_message().as_slice(), &sig_wrapper, &pk_bytes)
+                {
+                    Ok(valid) if valid => {}
+                    _ => {
+                        return Ok(warp::reply::with_status(
+                            warp::reply::json(&ApiResponse::<()> {
+                                success: false,
+                                data: None,
+                                error: Some("signature_invalid".into()),
+                            }),
+                            warp::http::StatusCode::BAD_REQUEST,
+                        )
+                        .into_response());
+                    }
+                }
                 let hash = tx.hash.clone();
                 // Add to mempool
                 if let Err(e) = pool
@@ -718,24 +716,32 @@ pub async fn start_api_server() -> Result<(), Box<dyn std::error::Error>> {
     let status = warp::path("status")
         .and(warp::get())
         .and(warp::any().map(move || (tx_pool_status.clone(), storage_status.clone())))
-        .and_then(|ctx: (Arc<crate::types::TransactionPool>, Arc<crate::storage::StorageManager>)| async move {
-            let (pool, storage) = ctx;
-            let height = storage.get_height().unwrap_or(0);
-            let pool_stats = pool.get_stats().await;
-            Ok::<_, warp::Rejection>(warp::reply::with_status(
-                warp::reply::json(&serde_json::json!({
-                    "status": "ok",
-                    "service": "dytallix-node",
-                    "chain_id": "dyt-local-1",
-                    "latest_height": height,
-                    "height": height,
-                    "block_height": height,
-                    "mempool_size": pool_stats.total_transactions,
-                    "timestamp": chrono::Utc::now().timestamp()
-                })),
-                warp::http::StatusCode::OK
-            ).into_response())
-        })
+        .and_then(
+            |ctx: (
+                Arc<crate::types::TransactionPool>,
+                Arc<crate::storage::StorageManager>,
+            )| async move {
+                let (pool, storage) = ctx;
+                let height = storage.get_height().unwrap_or(0);
+                let pool_stats = pool.get_stats().await;
+                Ok::<_, warp::Rejection>(
+                    warp::reply::with_status(
+                        warp::reply::json(&serde_json::json!({
+                            "status": "ok",
+                            "service": "dytallix-node",
+                            "chain_id": "dyt-local-1",
+                            "latest_height": height,
+                            "height": height,
+                            "block_height": height,
+                            "mempool_size": pool_stats.total_transactions,
+                            "timestamp": chrono::Utc::now().timestamp()
+                        })),
+                        warp::http::StatusCode::OK,
+                    )
+                    .into_response(),
+                )
+            },
+        )
         .boxed();
 
     // Get transaction
@@ -775,223 +781,296 @@ pub async fn start_api_server() -> Result<(), Box<dyn std::error::Error>> {
         .and(warp::post())
         .and(warp::body::json())
         .and(warp::any().map(move || (storage.clone(), tx_pool.clone(), rpc_runtime.clone())))
-        .and_then(|request: serde_json::Value, ctx: (Arc<crate::storage::StorageManager>, Arc<crate::types::TransactionPool>, Arc<crate::runtime::DytallixRuntime>)| async move {
-            if let Some(method) = request.get("method").and_then(|m| m.as_str()) {
-                let (storage, tx_pool, runtime) = ctx;
-                let result = match method {
-                    // Contract methods
-                    "contract_deploy" => {
-                        if let Some(params) = request.get("params").and_then(|p| p.as_array()).and_then(|arr| arr.first()) {
-                            handle_contract_deploy(params.clone(), (storage.clone(), tx_pool.clone())).await
-                        } else {
-                            serde_json::json!({"error": "Invalid parameters"})
+        .and_then(
+            |request: serde_json::Value,
+             ctx: (
+                Arc<crate::storage::StorageManager>,
+                Arc<crate::types::TransactionPool>,
+                Arc<crate::runtime::DytallixRuntime>,
+            )| async move {
+                if let Some(method) = request.get("method").and_then(|m| m.as_str()) {
+                    let (storage, tx_pool, runtime) = ctx;
+                    let result = match method {
+                        // Contract methods
+                        "contract_deploy" => {
+                            if let Some(params) = request
+                                .get("params")
+                                .and_then(|p| p.as_array())
+                                .and_then(|arr| arr.first())
+                            {
+                                handle_contract_deploy(
+                                    params.clone(),
+                                    (storage.clone(), tx_pool.clone()),
+                                )
+                                .await
+                            } else {
+                                serde_json::json!({"error": "Invalid parameters"})
+                            }
                         }
-                    }
-                    "contract_instantiate" => {
-                        if let Some(params) = request.get("params").and_then(|p| p.as_array()).and_then(|arr| arr.first()) {
-                            handle_contract_instantiate(params.clone(), (storage.clone(), tx_pool.clone())).await
-                        } else {
-                            serde_json::json!({"error": "Invalid parameters"})
+                        "contract_instantiate" => {
+                            if let Some(params) = request
+                                .get("params")
+                                .and_then(|p| p.as_array())
+                                .and_then(|arr| arr.first())
+                            {
+                                handle_contract_instantiate(
+                                    params.clone(),
+                                    (storage.clone(), tx_pool.clone()),
+                                )
+                                .await
+                            } else {
+                                serde_json::json!({"error": "Invalid parameters"})
+                            }
                         }
-                    }
-                    "contract_execute" => {
-                        if let Some(params) = request.get("params").and_then(|p| p.as_array()).and_then(|arr| arr.first()) {
-                            handle_contract_execute(params.clone(), (storage.clone(), tx_pool.clone())).await
-                        } else {
-                            serde_json::json!({"error": "Invalid parameters"})
+                        "contract_execute" => {
+                            if let Some(params) = request
+                                .get("params")
+                                .and_then(|p| p.as_array())
+                                .and_then(|arr| arr.first())
+                            {
+                                handle_contract_execute(
+                                    params.clone(),
+                                    (storage.clone(), tx_pool.clone()),
+                                )
+                                .await
+                            } else {
+                                serde_json::json!({"error": "Invalid parameters"})
+                            }
                         }
-                    }
-                    "contract_get_code" => {
-                        if let Some(params) = request.get("params").and_then(|p| p.as_array()).and_then(|arr| arr.first()) {
-                            handle_contract_get_code(params.clone(), (storage.clone(), tx_pool.clone())).await
-                        } else {
-                            serde_json::json!({"error": "Invalid parameters"})
+                        "contract_get_code" => {
+                            if let Some(params) = request
+                                .get("params")
+                                .and_then(|p| p.as_array())
+                                .and_then(|arr| arr.first())
+                            {
+                                handle_contract_get_code(
+                                    params.clone(),
+                                    (storage.clone(), tx_pool.clone()),
+                                )
+                                .await
+                            } else {
+                                serde_json::json!({"error": "Invalid parameters"})
+                            }
                         }
-                    }
-                    "contract_get_instance" => {
-                        if let Some(params) = request.get("params").and_then(|p| p.as_array()).and_then(|arr| arr.first()) {
-                            handle_contract_get_instance(params.clone(), (storage.clone(), tx_pool.clone())).await
-                        } else {
-                            serde_json::json!({"error": "Invalid parameters"})
+                        "contract_get_instance" => {
+                            if let Some(params) = request
+                                .get("params")
+                                .and_then(|p| p.as_array())
+                                .and_then(|arr| arr.first())
+                            {
+                                handle_contract_get_instance(
+                                    params.clone(),
+                                    (storage.clone(), tx_pool.clone()),
+                                )
+                                .await
+                            } else {
+                                serde_json::json!({"error": "Invalid parameters"})
+                            }
                         }
-                    }
-                    "contract_get_storage" => {
-                        if let Some(params) = request.get("params").and_then(|p| p.as_array()).and_then(|arr| arr.first()) {
-                            handle_contract_get_storage(params.clone(), (storage.clone(), tx_pool.clone())).await
-                        } else {
-                            serde_json::json!({"error": "Invalid parameters"})
+                        "contract_get_storage" => {
+                            if let Some(params) = request
+                                .get("params")
+                                .and_then(|p| p.as_array())
+                                .and_then(|arr| arr.first())
+                            {
+                                handle_contract_get_storage(
+                                    params.clone(),
+                                    (storage.clone(), tx_pool.clone()),
+                                )
+                                .await
+                            } else {
+                                serde_json::json!({"error": "Invalid parameters"})
+                            }
                         }
-                    }
-                    "contract_list" => {
-                        handle_contract_list((storage.clone(), tx_pool.clone())).await
-                    }
+                        "contract_list" => {
+                            handle_contract_list((storage.clone(), tx_pool.clone())).await
+                        }
 
-                    // WASM-specific endpoints (aliases for contract methods)
-                    "wasm_deploy" => {
-                        if let Some(params) = request.get("params").and_then(|p| p.as_array()).and_then(|arr| arr.first()) {
-                            handle_wasm_deploy(params.clone(), (storage.clone(), tx_pool.clone())).await
-                        } else {
-                            serde_json::json!({"error": "Invalid parameters"})
+                        // WASM-specific endpoints (aliases for contract methods)
+                        "wasm_deploy" => {
+                            if let Some(params) = request
+                                .get("params")
+                                .and_then(|p| p.as_array())
+                                .and_then(|arr| arr.first())
+                            {
+                                handle_wasm_deploy(
+                                    params.clone(),
+                                    (storage.clone(), tx_pool.clone()),
+                                )
+                                .await
+                            } else {
+                                serde_json::json!({"error": "Invalid parameters"})
+                            }
                         }
-                    }
-                    "wasm_execute" => {
-                        if let Some(params) = request.get("params").and_then(|p| p.as_array()).and_then(|arr| arr.first()) {
-                            handle_wasm_execute(params.clone(), (storage.clone(), tx_pool.clone())).await
-                        } else {
-                            serde_json::json!({"error": "Invalid parameters"})
+                        "wasm_execute" => {
+                            if let Some(params) = request
+                                .get("params")
+                                .and_then(|p| p.as_array())
+                                .and_then(|arr| arr.first())
+                            {
+                                handle_wasm_execute(
+                                    params.clone(),
+                                    (storage.clone(), tx_pool.clone()),
+                                )
+                                .await
+                            } else {
+                                serde_json::json!({"error": "Invalid parameters"})
+                            }
                         }
-                    }
 
-                    // Staking methods
-                    "staking_register_validator" => {
-                        if let Some(params) = request.get("params").and_then(|p| p.as_array()) {
-                            if params.len() >= 3 {
-                                handle_staking_register_validator(params, runtime.clone()).await
+                        // Staking methods
+                        "staking_register_validator" => {
+                            if let Some(params) = request.get("params").and_then(|p| p.as_array()) {
+                                if params.len() >= 3 {
+                                    handle_staking_register_validator(params, runtime.clone()).await
+                                } else {
+                                    serde_json::json!({"error": "Invalid parameters"})
+                                }
                             } else {
                                 serde_json::json!({"error": "Invalid parameters"})
                             }
-                        } else {
-                            serde_json::json!({"error": "Invalid parameters"})
                         }
-                    }
-                    "staking_delegate" => {
-                        if let Some(params) = request.get("params").and_then(|p| p.as_array()) {
-                            if params.len() >= 3 {
-                                handle_staking_delegate(params, runtime.clone()).await
+                        "staking_delegate" => {
+                            if let Some(params) = request.get("params").and_then(|p| p.as_array()) {
+                                if params.len() >= 3 {
+                                    handle_staking_delegate(params, runtime.clone()).await
+                                } else {
+                                    serde_json::json!({"error": "Invalid parameters"})
+                                }
                             } else {
                                 serde_json::json!({"error": "Invalid parameters"})
                             }
-                        } else {
-                            serde_json::json!({"error": "Invalid parameters"})
                         }
-                    }
-                    "staking_claim_rewards" => {
-                        if let Some(params) = request.get("params").and_then(|p| p.as_array()) {
-                            if params.len() >= 2 {
-                                handle_staking_claim_rewards(params, runtime.clone()).await
+                        "staking_claim_rewards" => {
+                            if let Some(params) = request.get("params").and_then(|p| p.as_array()) {
+                                if params.len() >= 2 {
+                                    handle_staking_claim_rewards(params, runtime.clone()).await
+                                } else {
+                                    serde_json::json!({"error": "Invalid parameters"})
+                                }
                             } else {
                                 serde_json::json!({"error": "Invalid parameters"})
                             }
-                        } else {
-                            serde_json::json!({"error": "Invalid parameters"})
                         }
-                    }
-                    "staking_claim_all_rewards" => {
-                        if let Some(params) = request.get("params").and_then(|p| p.as_array()) {
-                            if !params.is_empty() {
-                                handle_staking_claim_all_rewards(params, runtime.clone()).await
+                        "staking_claim_all_rewards" => {
+                            if let Some(params) = request.get("params").and_then(|p| p.as_array()) {
+                                if !params.is_empty() {
+                                    handle_staking_claim_all_rewards(params, runtime.clone()).await
+                                } else {
+                                    serde_json::json!({"error": "Invalid parameters"})
+                                }
                             } else {
                                 serde_json::json!({"error": "Invalid parameters"})
                             }
-                        } else {
-                            serde_json::json!({"error": "Invalid parameters"})
                         }
-                    }
-                    "staking_sync_accrued" => {
-                        if let Some(params) = request.get("params").and_then(|p| p.as_array()) {
-                            if params.len() >= 2 {
-                                handle_staking_sync_accrued(params, runtime.clone()).await
+                        "staking_sync_accrued" => {
+                            if let Some(params) = request.get("params").and_then(|p| p.as_array()) {
+                                if params.len() >= 2 {
+                                    handle_staking_sync_accrued(params, runtime.clone()).await
+                                } else {
+                                    serde_json::json!({"error": "Invalid parameters"})
+                                }
                             } else {
                                 serde_json::json!({"error": "Invalid parameters"})
                             }
-                        } else {
-                            serde_json::json!({"error": "Invalid parameters"})
                         }
-                    }
-                    "staking_get_accrued" => {
-                        if let Some(params) = request.get("params").and_then(|p| p.as_array()) {
-                            if params.len() >= 2 {
-                                handle_staking_get_accrued(params, runtime.clone()).await
+                        "staking_get_accrued" => {
+                            if let Some(params) = request.get("params").and_then(|p| p.as_array()) {
+                                if params.len() >= 2 {
+                                    handle_staking_get_accrued(params, runtime.clone()).await
+                                } else {
+                                    serde_json::json!({"error": "Invalid parameters"})
+                                }
                             } else {
                                 serde_json::json!({"error": "Invalid parameters"})
                             }
-                        } else {
-                            serde_json::json!({"error": "Invalid parameters"})
                         }
-                    }
-                    "staking_get_validator" => {
-                        if let Some(params) = request.get("params").and_then(|p| p.as_array()) {
-                            if !params.is_empty() {
-                                handle_staking_get_validator(params, runtime.clone()).await
+                        "staking_get_validator" => {
+                            if let Some(params) = request.get("params").and_then(|p| p.as_array()) {
+                                if !params.is_empty() {
+                                    handle_staking_get_validator(params, runtime.clone()).await
+                                } else {
+                                    serde_json::json!({"error": "Invalid parameters"})
+                                }
                             } else {
                                 serde_json::json!({"error": "Invalid parameters"})
                             }
-                        } else {
-                            serde_json::json!({"error": "Invalid parameters"})
                         }
-                    }
-                    "staking_get_validators" => {
-                        handle_staking_get_validators(runtime.clone()).await
-                    }
-                    "staking_get_delegations" => {
-                        if let Some(params) = request.get("params").and_then(|p| p.as_array()) {
-                            if !params.is_empty() {
-                                handle_staking_get_validators(runtime.clone()).await
+                        "staking_get_validators" => {
+                            handle_staking_get_validators(runtime.clone()).await
+                        }
+                        "staking_get_delegations" => {
+                            if let Some(params) = request.get("params").and_then(|p| p.as_array()) {
+                                if !params.is_empty() {
+                                    handle_staking_get_validators(runtime.clone()).await
+                                } else {
+                                    serde_json::json!({"error": "Invalid parameters"})
+                                }
                             } else {
                                 serde_json::json!({"error": "Invalid parameters"})
                             }
-                        } else {
-                            serde_json::json!({"error": "Invalid parameters"})
                         }
-                    }
-                    "staking_get_stats" => {
-                        handle_staking_get_stats(runtime.clone()).await
-                    }
+                        "staking_get_stats" => handle_staking_get_stats(runtime.clone()).await,
 
-                    // Asset Registry methods
-                    "asset_register" => {
-                        if let Some(params) = request.get("params").and_then(|p| p.as_array()) {
-                            if params.len() >= 2 {
-                                handle_asset_register(params, runtime.clone()).await
+                        // Asset Registry methods
+                        "asset_register" => {
+                            if let Some(params) = request.get("params").and_then(|p| p.as_array()) {
+                                if params.len() >= 2 {
+                                    handle_asset_register(params, runtime.clone()).await
+                                } else {
+                                    serde_json::json!({"error": "Invalid parameters"})
+                                }
                             } else {
                                 serde_json::json!({"error": "Invalid parameters"})
                             }
-                        } else {
-                            serde_json::json!({"error": "Invalid parameters"})
                         }
-                    }
-                    "asset_verify" => {
-                        if let Some(params) = request.get("params").and_then(|p| p.as_array()) {
-                            if !params.is_empty() {
-                                handle_asset_verify(params, runtime.clone()).await
+                        "asset_verify" => {
+                            if let Some(params) = request.get("params").and_then(|p| p.as_array()) {
+                                if !params.is_empty() {
+                                    handle_asset_verify(params, runtime.clone()).await
+                                } else {
+                                    serde_json::json!({"error": "Invalid parameters"})
+                                }
                             } else {
                                 serde_json::json!({"error": "Invalid parameters"})
                             }
-                        } else {
-                            serde_json::json!({"error": "Invalid parameters"})
                         }
-                    }
-                    "asset_get" => {
-                        if let Some(params) = request.get("params").and_then(|p| p.as_array()) {
-                            if !params.is_empty() {
-                                handle_asset_get(params, runtime.clone()).await
+                        "asset_get" => {
+                            if let Some(params) = request.get("params").and_then(|p| p.as_array()) {
+                                if !params.is_empty() {
+                                    handle_asset_get(params, runtime.clone()).await
+                                } else {
+                                    serde_json::json!({"error": "Invalid parameters"})
+                                }
                             } else {
                                 serde_json::json!({"error": "Invalid parameters"})
                             }
-                        } else {
-                            serde_json::json!({"error": "Invalid parameters"})
                         }
-                    }
-                    
-                    // Default case for unknown methods
-                    _ => {
-                        serde_json::json!({"error": "Method not found"})
-                    }
-                };
 
-                Ok::<_, warp::Rejection>(warp::reply::json(&serde_json::json!({
-                    "jsonrpc": "2.0",
-                    "result": result,
-                    "id": request.get("id").unwrap_or(&serde_json::json!(1))
-                })).into_response())
-            } else {
-                Ok(warp::reply::json(&serde_json::json!({
-                    "jsonrpc": "2.0",
-                    "error": {"code": -32600, "message": "Invalid Request"},
-                    "id": request.get("id").unwrap_or(&serde_json::json!(1))
-                })).into_response())
-            }
-        })
+                        // Default case for unknown methods
+                        _ => {
+                            serde_json::json!({"error": "Method not found"})
+                        }
+                    };
+
+                    Ok::<_, warp::Rejection>(
+                        warp::reply::json(&serde_json::json!({
+                            "jsonrpc": "2.0",
+                            "result": result,
+                            "id": request.get("id").unwrap_or(&serde_json::json!(1))
+                        }))
+                        .into_response(),
+                    )
+                } else {
+                    Ok(warp::reply::json(&serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "error": {"code": -32600, "message": "Invalid Request"},
+                        "id": request.get("id").unwrap_or(&serde_json::json!(1))
+                    }))
+                    .into_response())
+                }
+            },
+        )
         .boxed();
 
     // Staking endpoints
@@ -1138,20 +1217,22 @@ pub async fn start_api_server() -> Result<(), Box<dyn std::error::Error>> {
         .and(warp::post())
         .and(warp::body::json())
         .and(warp::any().map(move || asset_register_runtime.clone()))
-        .and_then(|request: serde_json::Value, runtime: Arc<crate::runtime::DytallixRuntime>| async move {
-            if let Some(params) = request.get("params").and_then(|p| p.as_array()) {
-                if params.len() >= 2 {
-                    let result = handle_asset_register(params, runtime.clone()).await;
-                    Ok::<_, warp::Rejection>(warp::reply::json(&result).into_response())
+        .and_then(
+            |request: serde_json::Value, runtime: Arc<crate::runtime::DytallixRuntime>| async move {
+                if let Some(params) = request.get("params").and_then(|p| p.as_array()) {
+                    if params.len() >= 2 {
+                        let result = handle_asset_register(params, runtime.clone()).await;
+                        Ok::<_, warp::Rejection>(warp::reply::json(&result).into_response())
+                    } else {
+                        let error = serde_json::json!({"error": "Invalid parameters"});
+                        Ok::<_, warp::Rejection>(warp::reply::json(&error).into_response())
+                    }
                 } else {
                     let error = serde_json::json!({"error": "Invalid parameters"});
                     Ok::<_, warp::Rejection>(warp::reply::json(&error).into_response())
                 }
-            } else {
-                let error = serde_json::json!({"error": "Invalid parameters"});
-                Ok::<_, warp::Rejection>(warp::reply::json(&error).into_response())
-            }
-        })
+            },
+        )
         .boxed();
 
     // REST alias to match integration tests: POST /api/quantum/register
@@ -1194,20 +1275,22 @@ pub async fn start_api_server() -> Result<(), Box<dyn std::error::Error>> {
         .and(warp::post())
         .and(warp::body::json())
         .and(warp::any().map(move || asset_verify_runtime.clone()))
-        .and_then(|request: serde_json::Value, runtime: Arc<crate::runtime::DytallixRuntime>| async move {
-            if let Some(params) = request.get("params").and_then(|p| p.as_array()) {
-                if !params.is_empty() {
-                    let result = handle_asset_verify(params, runtime.clone()).await;
-                    Ok::<_, warp::Rejection>(warp::reply::json(&result).into_response())
+        .and_then(
+            |request: serde_json::Value, runtime: Arc<crate::runtime::DytallixRuntime>| async move {
+                if let Some(params) = request.get("params").and_then(|p| p.as_array()) {
+                    if !params.is_empty() {
+                        let result = handle_asset_verify(params, runtime.clone()).await;
+                        Ok::<_, warp::Rejection>(warp::reply::json(&result).into_response())
+                    } else {
+                        let error = serde_json::json!({"error": "Invalid parameters"});
+                        Ok::<_, warp::Rejection>(warp::reply::json(&error).into_response())
+                    }
                 } else {
                     let error = serde_json::json!({"error": "Invalid parameters"});
                     Ok::<_, warp::Rejection>(warp::reply::json(&error).into_response())
                 }
-            } else {
-                let error = serde_json::json!({"error": "Invalid parameters"});
-                Ok::<_, warp::Rejection>(warp::reply::json(&error).into_response())
-            }
-        })
+            },
+        )
         .boxed();
 
     let asset_get_runtime = _runtime.clone();
@@ -1215,20 +1298,22 @@ pub async fn start_api_server() -> Result<(), Box<dyn std::error::Error>> {
         .and(warp::post())
         .and(warp::body::json())
         .and(warp::any().map(move || asset_get_runtime.clone()))
-        .and_then(|request: serde_json::Value, runtime: Arc<crate::runtime::DytallixRuntime>| async move {
-            if let Some(params) = request.get("params").and_then(|p| p.as_array()) {
-                if !params.is_empty() {
-                    let result = handle_asset_get(params, runtime.clone()).await;
-                    Ok::<_, warp::Rejection>(warp::reply::json(&result).into_response())
+        .and_then(
+            |request: serde_json::Value, runtime: Arc<crate::runtime::DytallixRuntime>| async move {
+                if let Some(params) = request.get("params").and_then(|p| p.as_array()) {
+                    if !params.is_empty() {
+                        let result = handle_asset_get(params, runtime.clone()).await;
+                        Ok::<_, warp::Rejection>(warp::reply::json(&result).into_response())
+                    } else {
+                        let error = serde_json::json!({"error": "Invalid parameters"});
+                        Ok::<_, warp::Rejection>(warp::reply::json(&error).into_response())
+                    }
                 } else {
                     let error = serde_json::json!({"error": "Invalid parameters"});
                     Ok::<_, warp::Rejection>(warp::reply::json(&error).into_response())
                 }
-            } else {
-                let error = serde_json::json!({"error": "Invalid parameters"});
-                Ok::<_, warp::Rejection>(warp::reply::json(&error).into_response())
-            }
-        })
+            },
+        )
         .boxed();
 
     // CORS
@@ -1272,7 +1357,7 @@ pub async fn start_api_server() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|_| "3003".to_string())
         .parse::<u16>()
         .unwrap_or(3003);
-    
+
     info!(
         "API server listening on 0.0.0.0:{} (block production: enabled)",
         port
@@ -1919,10 +2004,10 @@ async fn handle_asset_register(
     if params.len() < 2 {
         return serde_json::json!({"error": "Invalid parameters - expected [asset_hash, metadata] or [asset_hash, uri, metadata]"});
     }
-    
+
     let asset_hash = match params[0].as_str() {
         Some(h) => h,
-        None => return serde_json::json!({"error": "Invalid asset_hash parameter"})
+        None => return serde_json::json!({"error": "Invalid asset_hash parameter"}),
     };
 
     // Support both legacy and current forms:
@@ -1956,19 +2041,17 @@ async fn handle_asset_register(
 
     info!(
         "[AssetRegistry] Registering asset: {} uri={:?} metadata={}",
-        asset_hash,
-        uri,
-        metadata
+        asset_hash, uri, metadata
     );
-    
+
     // Generate a unique asset ID based on the hash (handle short hashes)
     let hash_len = asset_hash.len().min(16);
     let asset_id = format!("asset_{}", &asset_hash[..hash_len]);
-    
+
     // Get current blockchain state
     let block_height = runtime.get_current_height().await.unwrap_or(0);
     let timestamp = chrono::Utc::now().timestamp() as u64;
-    
+
     // Create the asset record to store on-chain
     let asset_record = serde_json::json!({
         "asset_id": asset_id,
@@ -1979,21 +2062,27 @@ async fn handle_asset_register(
         "timestamp": timestamp,
         "registered_at": chrono::Utc::now().to_rfc3339()
     });
-    
+
     // Store the asset record in the runtime's state
     // This creates a permanent on-chain record
     let storage_key = format!("asset:{}", asset_hash);
-    if let Err(e) = runtime.store_data(&storage_key, &asset_record.to_string()).await {
+    if let Err(e) = runtime
+        .store_data(&storage_key, &asset_record.to_string())
+        .await
+    {
         error!("[AssetRegistry] Failed to store asset on-chain: {}", e);
         return serde_json::json!({"error": format!("Failed to store asset: {}", e)});
     }
-    
+
     // Generate transaction hash for the registration
     let tx_content = format!("{}:{:?}:{}:{}", asset_hash, uri, metadata, timestamp);
     let tx_hash = format!("0x{}", blake3::hash(tx_content.as_bytes()).to_hex());
-    
-    info!("[AssetRegistry] ✅ Asset registered on-chain: {} at block {}, tx: {}", asset_id, block_height, tx_hash);
-    
+
+    info!(
+        "[AssetRegistry] ✅ Asset registered on-chain: {} at block {}, tx: {}",
+        asset_id, block_height, tx_hash
+    );
+
     serde_json::json!({
         "success": true,
         "asset_id": asset_id,
@@ -2012,14 +2101,14 @@ async fn handle_asset_verify(
     if params.is_empty() {
         return serde_json::json!({"error": "Invalid parameters - expected asset_hash"});
     }
-    
+
     let asset_hash = match params[0].as_str() {
         Some(h) => h,
-        None => return serde_json::json!({"error": "Invalid asset_hash parameter"})
+        None => return serde_json::json!({"error": "Invalid asset_hash parameter"}),
     };
-    
+
     info!("[AssetRegistry] Verifying asset: {}", asset_hash);
-    
+
     // Look up the asset in storage
     let storage_key = format!("asset:{}", asset_hash);
     match runtime.get_data(&storage_key).await {
@@ -2039,13 +2128,13 @@ async fn handle_asset_verify(
                         "registered_at": asset_record["registered_at"],
                         "note": "Asset verified on Dytallix blockchain"
                     })
-                },
+                }
                 Err(e) => {
                     error!("[AssetRegistry] Failed to parse stored asset data: {}", e);
                     serde_json::json!({"error": "Stored asset data is corrupted"})
                 }
             }
-        },
+        }
         Ok(None) => {
             info!("[AssetRegistry] Asset not found: {}", asset_hash);
             serde_json::json!({
@@ -2053,7 +2142,7 @@ async fn handle_asset_verify(
                 "error": "Asset not found on blockchain",
                 "asset_hash": asset_hash
             })
-        },
+        }
         Err(e) => {
             error!("[AssetRegistry] Storage query failed: {}", e);
             serde_json::json!({"error": format!("Storage query failed: {}", e)})

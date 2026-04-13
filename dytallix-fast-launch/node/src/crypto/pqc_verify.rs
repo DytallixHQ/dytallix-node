@@ -94,11 +94,18 @@ mod fail_closed_tests {
         // In those builds:
         // - if pqc-mock is enabled, verification is allowed (dev/testing only)
         // - otherwise, verification must fail closed
-        #[cfg(all(not(feature = "pqc-real"), not(feature = "pqc-fips204"), not(feature = "pqc-mock")))]
+        #[cfg(all(
+            not(feature = "pqc-real"),
+            not(feature = "pqc-fips204"),
+            not(feature = "pqc-mock")
+        ))]
         {
             use super::*;
             let result = verify(b"pk", b"msg", b"sig", PQCAlgorithm::Dilithium5);
-            assert!(matches!(result, Err(PQCVerifyError::FeatureNotCompiled { .. })));
+            assert!(matches!(
+                result,
+                Err(PQCVerifyError::FeatureNotCompiled { .. })
+            ));
         }
     }
 
@@ -177,7 +184,9 @@ pub fn verify(
         return match alg {
             PQCAlgorithm::Dilithium5 => verify_dilithium5_fips204(pubkey, msg, sig),
             PQCAlgorithm::MlDsa65 => verify_mldsa65_fips204(pubkey, msg, sig),
-            _ => Err(PQCVerifyError::UnsupportedAlgorithm(alg.as_str().to_string())),
+            _ => Err(PQCVerifyError::UnsupportedAlgorithm(
+                alg.as_str().to_string(),
+            )),
         };
     }
 
@@ -257,11 +266,9 @@ fn verify_dilithium5(pubkey: &[u8], msg: &[u8], sig: &[u8]) -> Result<(), PQCVer
                 })
             }
         }
-        Err(_) => {
-            Err(PQCVerifyError::VerificationFailed {
-                algorithm: "dilithium5".to_string(),
-            })
-        }
+        Err(_) => Err(PQCVerifyError::VerificationFailed {
+            algorithm: "dilithium5".to_string(),
+        }),
     }
 }
 
@@ -469,7 +476,10 @@ mod tests {
             b"signature",
             PQCAlgorithm::Falcon1024,
         );
-        assert!(matches!(result, Err(PQCVerifyError::UnsupportedAlgorithm(_))));
+        assert!(matches!(
+            result,
+            Err(PQCVerifyError::UnsupportedAlgorithm(_))
+        ));
 
         let result = verify(
             b"pubkey",
@@ -477,23 +487,23 @@ mod tests {
             b"signature",
             PQCAlgorithm::SphincsPlus,
         );
-        assert!(matches!(result, Err(PQCVerifyError::UnsupportedAlgorithm(_))));
+        assert!(matches!(
+            result,
+            Err(PQCVerifyError::UnsupportedAlgorithm(_))
+        ));
     }
 }
 
 #[cfg(feature = "pqc-fips204")]
 fn verify_dilithium5_fips204(pubkey: &[u8], msg: &[u8], sig: &[u8]) -> Result<(), PQCVerifyError> {
     // FIPS 204 ML-DSA-87 (Dilithium5)
-    let pk_array: [u8; ml_dsa_87::PK_LEN] = pubkey.try_into().map_err(|_| {
-        PQCVerifyError::InvalidPublicKey {
-            algorithm: "dilithium5".to_string(),
-            details: format!(
-                "Expected {} bytes, got {}",
-                ml_dsa_87::PK_LEN,
-                pubkey.len()
-            ),
-        }
-    })?;
+    let pk_array: [u8; ml_dsa_87::PK_LEN] =
+        pubkey
+            .try_into()
+            .map_err(|_| PQCVerifyError::InvalidPublicKey {
+                algorithm: "dilithium5".to_string(),
+                details: format!("Expected {} bytes, got {}", ml_dsa_87::PK_LEN, pubkey.len()),
+            })?;
 
     let pk_obj = ml_dsa_87::PublicKey::try_from_bytes(pk_array).map_err(|_| {
         PQCVerifyError::InvalidPublicKey {
@@ -502,16 +512,12 @@ fn verify_dilithium5_fips204(pubkey: &[u8], msg: &[u8], sig: &[u8]) -> Result<()
         }
     })?;
 
-    let sig_array: [u8; ml_dsa_87::SIG_LEN] = sig.try_into().map_err(|_| {
-        PQCVerifyError::InvalidSignature {
-            algorithm: "dilithium5".to_string(),
-            details: format!(
-                "Expected {} bytes, got {}",
-                ml_dsa_87::SIG_LEN,
-                sig.len()
-            ),
-        }
-    })?;
+    let sig_array: [u8; ml_dsa_87::SIG_LEN] =
+        sig.try_into()
+            .map_err(|_| PQCVerifyError::InvalidSignature {
+                algorithm: "dilithium5".to_string(),
+                details: format!("Expected {} bytes, got {}", ml_dsa_87::SIG_LEN, sig.len()),
+            })?;
 
     if pk_obj.verify(msg, &sig_array, &[]) {
         Ok(())
@@ -524,16 +530,13 @@ fn verify_dilithium5_fips204(pubkey: &[u8], msg: &[u8], sig: &[u8]) -> Result<()
 
 #[cfg(feature = "pqc-fips204")]
 fn verify_mldsa65_fips204(pubkey: &[u8], msg: &[u8], sig: &[u8]) -> Result<(), PQCVerifyError> {
-    let pk_array: [u8; ml_dsa_65::PK_LEN] = pubkey.try_into().map_err(|_| {
-        PQCVerifyError::InvalidPublicKey {
-            algorithm: "mldsa65".to_string(),
-            details: format!(
-                "Expected {} bytes, got {}",
-                ml_dsa_65::PK_LEN,
-                pubkey.len()
-            ),
-        }
-    })?;
+    let pk_array: [u8; ml_dsa_65::PK_LEN] =
+        pubkey
+            .try_into()
+            .map_err(|_| PQCVerifyError::InvalidPublicKey {
+                algorithm: "mldsa65".to_string(),
+                details: format!("Expected {} bytes, got {}", ml_dsa_65::PK_LEN, pubkey.len()),
+            })?;
 
     let pk_obj = ml_dsa_65::PublicKey::try_from_bytes(pk_array).map_err(|_| {
         PQCVerifyError::InvalidPublicKey {
@@ -542,16 +545,12 @@ fn verify_mldsa65_fips204(pubkey: &[u8], msg: &[u8], sig: &[u8]) -> Result<(), P
         }
     })?;
 
-    let sig_array: [u8; ml_dsa_65::SIG_LEN] = sig.try_into().map_err(|_| {
-        PQCVerifyError::InvalidSignature {
-            algorithm: "mldsa65".to_string(),
-            details: format!(
-                "Expected {} bytes, got {}",
-                ml_dsa_65::SIG_LEN,
-                sig.len()
-            ),
-        }
-    })?;
+    let sig_array: [u8; ml_dsa_65::SIG_LEN] =
+        sig.try_into()
+            .map_err(|_| PQCVerifyError::InvalidSignature {
+                algorithm: "mldsa65".to_string(),
+                details: format!("Expected {} bytes, got {}", ml_dsa_65::SIG_LEN, sig.len()),
+            })?;
 
     if pk_obj.verify(msg, &sig_array, &[]) {
         Ok(())

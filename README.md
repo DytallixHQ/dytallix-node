@@ -2,13 +2,33 @@
 
 Public node, RPC, and backend source for the Dytallix testnet.
 
+Keypair, faucet, transfer, and basic contract lifecycle are available for experimentation on the public testnet. Staking, governance, and some advanced or operator paths are not yet production-complete.
+
 This repository is a source snapshot packaged from the running Dytallix testnet
 server on April 5, 2026 so the public chain backend is no longer stranded on a
 single machine.
 
+The machine-readable public capability source of truth currently lives in this
+repository at `docs/public-capabilities.json` and should be kept aligned with
+runtime behavior before broader publication.
+
+Compatible node deployments serve that same contract at `GET /api/capabilities`
+so clients can discover the active public surface without scraping docs.
+
+## Repository Role
+
+- Role: public node and backend source
+- Current publication state: cleaned source snapshot plus reproducible deployment templates
+- Important boundary: until production is rebuilt and cut over only from a clean
+  checkout of this repository, this should still be treated as a published
+  snapshot with an explicit remediation path rather than a fully proven
+  canonical deployment repo
+
 ## Quick Links
 
 - [Docs hub](docs/README.md)
+- [Capability manifest](docs/public-capabilities.json)
+- [Public deployment evidence](docs/public-deployment-evidence.md)
 - [Repository map](docs/repository-map.md)
 - [Build and run](docs/build-and-run.md)
 - [RPC and API docs](docs/rpc-and-apis.md)
@@ -86,10 +106,13 @@ The shorter repo-level summary is in [RPC and API docs](docs/rpc-and-apis.md).
 - `pqc-crypto` referenced a missing local dev dependency on the server
   (`../interoperability`). That dev-only dependency was removed here so the
   published tree builds cleanly.
+- Production publication is not complete until the clean checkout deployment
+  path in [Build and run](docs/build-and-run.md) is the only active server
+  path and no manual binary swap is still required.
 
 ## Related Repositories
 
 - [dytallix-sdk](https://github.com/DytallixHQ/dytallix-sdk)
-- [dytallix-explorer](https://github.com/DytallixHQ/dytallix-explorer)
-- [dytallix-faucet](https://github.com/DytallixHQ/dytallix-faucet)
+- [dytallix-explorer](https://github.com/DytallixHQ/dytallix-explorer) - separate public surface that still needs its own source-publication audit
+- [dytallix-faucet](https://github.com/DytallixHQ/dytallix-faucet) - docs-only faucet surface description, not deployed faucet backend source
 - [DytallixHQ](https://github.com/DytallixHQ)

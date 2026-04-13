@@ -68,7 +68,9 @@ impl DeadManSwitchModule {
 
     /// Reset the inactivity timer
     pub fn ping(&self, owner: &str, current_block: u64) -> Result<(), String> {
-        let mut config = self.load_config(owner).ok_or("No dead man switch registered")?;
+        let mut config = self
+            .load_config(owner)
+            .ok_or("No dead man switch registered")?;
         config.last_active_block = current_block;
         self.save_config(owner, &config)
     }
@@ -80,7 +82,9 @@ impl DeadManSwitchModule {
         caller: &str,
         current_block: u64,
     ) -> Result<String, String> {
-        let config = self.load_config(owner).ok_or("No dead man switch registered")?;
+        let config = self
+            .load_config(owner)
+            .ok_or("No dead man switch registered")?;
 
         if config.beneficiary != caller {
             return Err("Caller is not the beneficiary".to_string());
