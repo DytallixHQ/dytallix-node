@@ -45,7 +45,7 @@ The deeper runtime and endpoint notes live in
 ### Clean production separation
 
 For production-style deployment, keep the node under a Dytallix-owned root such
-as `/opt/dytallix-node` instead of launching it from a QuantumVault PM2 tree.
+as `/opt/dytallix-node` instead of launching it from a legacy PM2 tree.
 
 Reference artifacts in this repository:
 

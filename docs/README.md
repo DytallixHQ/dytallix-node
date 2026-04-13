@@ -13,7 +13,7 @@ workspace.
   deeper protocol docs live
 - [FAQ](faq.md) - operational questions about this repository snapshot
 - [Deployment separation audit](deployment-separation-audit.md) - classification
-  of current Dytallix versus QuantumVault deployment overlap
+  of current Dytallix versus legacy deployment overlap
 
 ## Existing Internal Docs
 

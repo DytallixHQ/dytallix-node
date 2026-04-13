@@ -2071,7 +2071,7 @@ async fn handle_asset_get(
         serde_json::json!({
             "asset_id": asset_id,
             "asset_hash": format!("{}{}", asset_id.replace("asset_", ""), "0".repeat(48)),
-            "uri": format!("qv://{}.enc", asset_id),
+            "uri": format!("dytallix://{}.enc", asset_id),
             "metadata": {
                 "filename": "example.txt",
                 "mime": "text/plain",

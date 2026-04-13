@@ -1942,7 +1942,7 @@ pub async fn asset_register(
     let next_height = current_height + 1;
     
     // Generate a transaction hash for this asset registration
-    let tx_hash = format!("qv_anchor_{}", blake3::hash(asset_hash.as_bytes()).to_hex());
+    let tx_hash = format!("dytallix_anchor_{}", blake3::hash(asset_hash.as_bytes()).to_hex());
     
     // Add asset hash to pending assets for next block
     ctx.pending_assets.lock().unwrap().push(asset_hash.to_string());
