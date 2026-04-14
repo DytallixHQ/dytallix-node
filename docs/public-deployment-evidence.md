@@ -39,7 +39,7 @@ as a published snapshot plus a reproducible deployment path.
 Host audit on April 13, 2026 confirmed the following:
 
 - PM2 process `dytallix-node` is online
-- active binary path: `/opt/dytallix-node/dytallix-fast-launch/node/target/release/dytallix-fast-node`
+- active binary path at the time of audit: `/opt/dytallix-node/dytallix-fast-launch/node/target/release/dytallix-fast-node`
 - process working directory: `/opt/dytallix-node`
 - deployed commit: `00b1ebbffc2c2f261de06c03c662957ca52cf2f9`
 - dirty files in the live checkout:
@@ -47,6 +47,11 @@ Host audit on April 13, 2026 confirmed the following:
 	- `dytallix-fast-launch/node/src/rpc/mod.rs`
 	- untracked `docs/public-capabilities.json`
 - clean comparison checkout: `/opt/dytallix-node-clean` at the same commit, with clean git status
+
+For reproducible clean-checkout builds from this repository, the release binary is
+emitted at `/opt/dytallix-node/target/release/dytallix-fast-node` when built
+from the workspace root with the documented `cargo build -p dytallix-fast-node
+--bin dytallix-fast-node --release --locked` command.
 
 That means the live node behavior and the published node contract can be
 verified today, but production provenance is still not proven from a clean

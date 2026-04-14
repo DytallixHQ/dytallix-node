@@ -2,7 +2,7 @@ module.exports = {
   apps: [
     {
       name: 'dytallix-fast-node',
-      script: '/opt/dytallix-node/dytallix-fast-launch/node/target/release/dytallix-fast-node',
+      script: '/opt/dytallix-node/target/release/dytallix-fast-node',
       cwd: '/opt/dytallix-node',
       instances: 1,
       exec_mode: 'fork',
