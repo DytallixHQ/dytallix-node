@@ -109,7 +109,7 @@ The shorter repo-level summary is in [RPC and API docs](docs/rpc-and-apis.md).
 ## Related Repositories
 
 - [dytallix-sdk](https://github.com/DytallixHQ/dytallix-sdk)
-- [dytallix-website](https://github.com/DytallixHQ/dytallix-website) - canonical public website frontend source, including the hosted explorer UI
+- [dytallix.com](https://dytallix.com) - hosted public website and explorer runtime surface
 - [dytallix-explorer](https://github.com/DytallixHQ/dytallix-explorer) - explorer surface documentation repo
 - [dytallix-faucet](https://github.com/DytallixHQ/dytallix-faucet) - canonical public faucet backend source
 - [DytallixHQ](https://github.com/DytallixHQ)
