@@ -4,9 +4,8 @@ Public node, RPC, and backend source for the Dytallix testnet.
 
 Keypair, faucet, transfer, and basic contract lifecycle are available for experimentation on the public testnet. Staking, governance, and some advanced or operator paths are not yet production-complete.
 
-This repository is a source snapshot packaged from the running Dytallix testnet
-server on April 5, 2026 so the public chain backend is no longer stranded on a
-single machine.
+This repository is the canonical public node and backend source for the live
+Dytallix testnet.
 
 The machine-readable public capability source of truth currently lives in this
 repository at `docs/public-capabilities.json` and should be kept aligned with
@@ -18,11 +17,10 @@ so clients can discover the active public surface without scraping docs.
 ## Repository Role
 
 - Role: public node and backend source
-- Current publication state: cleaned source snapshot plus reproducible deployment templates
-- Important boundary: until production is rebuilt and cut over only from a clean
-  checkout of this repository, this should still be treated as a published
-  snapshot with an explicit remediation path rather than a fully proven
-  canonical deployment repo
+- Current publication state: canonical public node/backend source with clean-checkout production provenance
+- Production status: the public deployment now runs from a clean checkout rooted
+  at `/opt/dytallix-node`, built from this repository and launched from
+  `/opt/dytallix-node/target/release/dytallix-fast-node`
 
 ## Quick Links
 
@@ -55,7 +53,7 @@ The workspace is split into four main packages:
 See [Repository map](docs/repository-map.md) for the package names, binaries,
 and notable subpaths.
 
-## Why This Snapshot Matters
+## Why This Repository Matters
 
 This published tree includes the server-side fixes that make the public signed
 transaction path usable end to end:
@@ -98,21 +96,20 @@ The main API and protocol references are already in the repository:
 
 The shorter repo-level summary is in [RPC and API docs](docs/rpc-and-apis.md).
 
-## Snapshot Notes
+## Clean Deployment Notes
 
-- This is a cleaned source snapshot. Runtime data, RocksDB files, launch
-  evidence, local keys, Finder metadata, and temporary backup artifacts were
-  intentionally excluded.
+- Runtime data, RocksDB files, launch evidence, local keys, Finder metadata,
+  and temporary backup artifacts are intentionally excluded from the public repo.
 - `pqc-crypto` referenced a missing local dev dependency on the server
   (`../interoperability`). That dev-only dependency was removed here so the
   published tree builds cleanly.
-- Production publication is not complete until the clean checkout deployment
-  path in [Build and run](docs/build-and-run.md) is the only active server
-  path and no manual binary swap is still required.
+- The clean checkout deployment path in [Build and run](docs/build-and-run.md)
+  is now the active production path.
 
 ## Related Repositories
 
 - [dytallix-sdk](https://github.com/DytallixHQ/dytallix-sdk)
-- [dytallix-explorer](https://github.com/DytallixHQ/dytallix-explorer) - separate public surface that still needs its own source-publication audit
-- [dytallix-faucet](https://github.com/DytallixHQ/dytallix-faucet) - docs-only faucet surface description, not deployed faucet backend source
+- [dytallix-website](https://github.com/DytallixHQ/dytallix-website) - canonical public website frontend source, including the hosted explorer UI
+- [dytallix-explorer](https://github.com/DytallixHQ/dytallix-explorer) - explorer surface documentation repo
+- [dytallix-faucet](https://github.com/DytallixHQ/dytallix-faucet) - canonical public faucet backend source
 - [DytallixHQ](https://github.com/DytallixHQ)

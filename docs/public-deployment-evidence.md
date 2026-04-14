@@ -11,52 +11,41 @@ The live public node currently exposes:
 - `GET https://dytallix.com/api/blockchain/api/staking/validators`
 
 Those endpoints are enough to verify that the live public behavior matches the
-published capability contract in this repo on April 13, 2026:
+published capability contract in this repo on April 14, 2026:
 
 - the live node advertises `/api/capabilities`
 - public staking and governance writes are marked hidden in the capability contract
 - validator discovery no longer returns placeholder IDs like `validator1`
 
-## What This Does Not Prove
+## Clean-Checkout Production Provenance
 
-This public evidence does not, by itself, prove that the production host has
-already been rebuilt and cut over from a clean checkout rooted at
-`/opt/dytallix-node`.
+Production provenance is now evidenced from the real host.
 
-That final provenance check still requires operator-side evidence from the real
-host, such as:
+Verified operator-side facts on April 14, 2026:
 
-- active process path under `/opt/dytallix-node`
-- clean checkout revision hash
-- build command and resulting binary path
-- restart evidence from `systemd` or `pm2`
+- active PM2 script path: `/opt/dytallix-node/target/release/dytallix-fast-node`
+- process working directory: `/opt/dytallix-node`
+- deployed commit: `0c076f35b5c19baf9d31a04ee03c230ddef9a380`
+- git status in `/opt/dytallix-node`: clean
+- build command used from the repo root: `cargo build -p dytallix-fast-node --bin dytallix-fast-node --release --locked`
+- production env preserved from `/etc/dytallix/dytallix-fast-node.env`
+- PM2 restart completed after cloning a fresh public checkout into `/opt/dytallix-node`
 
-Until that evidence is published, this repository should still describe itself
-as a published snapshot plus a reproducible deployment path.
+That means the public node behavior and the deployed production binary are now
+both attributable to a clean checkout of this public repository.
 
 ## Operator Audit Snapshot
 
-Host audit on April 13, 2026 confirmed the following:
+The earlier April 13, 2026 audit captured the pre-cutover state and exposed the
+host-side drift that had to be removed.
 
-- PM2 process `dytallix-node` is online
-- active binary path at the time of audit: `/opt/dytallix-node/dytallix-fast-launch/node/target/release/dytallix-fast-node`
-- process working directory: `/opt/dytallix-node`
-- deployed commit: `00b1ebbffc2c2f261de06c03c662957ca52cf2f9`
-- dirty files in the live checkout:
-	- `dytallix-fast-launch/node/src/main.rs`
-	- `dytallix-fast-launch/node/src/rpc/mod.rs`
-	- untracked `docs/public-capabilities.json`
-- clean comparison checkout: `/opt/dytallix-node-clean` at the same commit, with clean git status
+- old PM2 binary path: `/opt/dytallix-node/dytallix-fast-launch/node/target/release/dytallix-fast-node`
+- old deployed commit: `00b1ebbffc2c2f261de06c03c662957ca52cf2f9`
+- dirty files existed in that older live checkout
 
-For reproducible clean-checkout builds from this repository, the release binary is
-emitted at `/opt/dytallix-node/target/release/dytallix-fast-node` when built
-from the workspace root with the documented `cargo build -p dytallix-fast-node
---bin dytallix-fast-node --release --locked` command.
-
-That means the live node behavior and the published node contract can be
-verified today, but production provenance is still not proven from a clean
-public deployment commit. The cutover from hidden host-side source drift to a
-clean canonical checkout is still pending.
+That dirty tree was backed up and replaced with a fresh public clone at
+`/opt/dytallix-node`, after which PM2 was restarted against the clean release
+binary path documented above.
 
 ## Public Verification Command
 
