@@ -8,10 +8,12 @@ Do not open a public GitHub issue for security vulnerabilities.
 
 ## Reporting A Vulnerability
 
-Use one of these private channels:
+Report vulnerabilities privately by email:
 
-- GitHub Security Advisories on this repository, when enabled
 - email: hello@dytallix.com
+
+If GitHub Security Advisories are enabled on this repository, you may use that
+channel instead.
 
 Include:
 

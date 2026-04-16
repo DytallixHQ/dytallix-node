@@ -1,4 +1,4 @@
-# Contributing To Dytallix Node
+# Contributing to Dytallix Node
 
 Start with the [README](README.md) and [docs hub](docs/README.md) so changes to
 the public node, APIs, and internal docs stay aligned.
