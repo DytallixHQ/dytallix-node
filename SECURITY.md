@@ -8,8 +8,10 @@ Do not open a public GitHub issue for security vulnerabilities.
 
 ## Reporting A Vulnerability
 
-Report vulnerabilities by sending a direct message to the maintainer on
-[Discord](https://discord.gg/eyVvu5kmPG).
+Use one of these private channels:
+
+- GitHub Security Advisories on this repository, when enabled
+- email: hello@dytallix.com
 
 Include:
 
@@ -18,6 +20,8 @@ Include:
 - reproduction steps or proof of concept when available
 - your severity assessment
 - whether you want public credit after disclosure
+
+We aim to acknowledge new reports within 3 business days.
 
 ## Scope
 
@@ -41,3 +45,5 @@ The following areas are in scope:
 
 We follow responsible disclosure and ask for a reasonable window to investigate,
 fix, and publish before public disclosure.
+
+Do not use Discord or public issue threads for vulnerability reporting.
