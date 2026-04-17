@@ -62,6 +62,12 @@ transaction path usable end to end:
 - the signed `fee` field is converted into execution gas at submit time
 - `/status` exposes public gas parameters for SDK and CLI fee estimation
 
+## Prerequisites
+
+Install [Rust](https://www.rust-lang.org/tools/install) with `rustup`. That
+provides the Rust toolchain and `cargo` used by the workspace build and run
+commands in this repository.
+
 ## Build Quickstart
 
 Build the full workspace:
