@@ -764,7 +764,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_batch_processing() {
-        let config = PerformanceConfig::default();
+        let config = PerformanceConfig {
+            max_batch_size: 2,
+            ..PerformanceConfig::default()
+        };
         let optimizer = PerformanceOptimizer::new(config);
 
         let tx1 = create_test_transaction(1000);

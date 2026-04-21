@@ -6,6 +6,7 @@
 use anyhow::Result;
 use std::sync::Arc;
 use tokio;
+use uuid::Uuid;
 
 use crate::consensus::ConsensusEngine;
 use crate::crypto::PQCManager;
@@ -16,8 +17,9 @@ use crate::types::{AIRequestTransaction, AIServiceType, Transaction, TransferTra
 /// Create a test consensus engine with AI integration
 async fn create_test_consensus_engine() -> Result<ConsensusEngine> {
     // Initialize storage
+    let data_dir = std::env::temp_dir().join(format!("dytallix-consensus-test-{}", Uuid::new_v4()));
     let storage = Arc::new(
-        StorageManager::new()
+        StorageManager::new_at_path(&data_dir, "dyt-test-1")
             .await
             .map_err(|e| anyhow::anyhow!("Storage error: {}", e))?,
     );
@@ -115,7 +117,7 @@ async fn test_consensus_initialization_integration() -> Result<()> {
     if let Some(stats) = consensus.get_ai_integration_stats().await {
         println!("✓ AI integration stats: {}", stats);
         assert!(stats.get("total_requests").is_some());
-        assert!(stats.get("ai_verification_required").is_some());
+        assert!(stats.get("avg_verification_time_ms").is_some());
     }
 
     // Test basic transaction validation with AI

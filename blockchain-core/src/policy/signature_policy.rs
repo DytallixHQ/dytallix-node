@@ -206,8 +206,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_default_policy_allows_all_pqc() {
-        let policy = SignaturePolicy::default();
+    fn test_allow_all_pqc_policy_allows_all_pqc() {
+        let policy = SignaturePolicy::allow_all_pqc();
 
         assert!(policy
             .validate_algorithm(&SignatureAlgorithm::Dilithium3)
@@ -221,6 +221,24 @@ mod tests {
         assert!(policy
             .validate_algorithm(&SignatureAlgorithm::SphincsSha256128s)
             .is_ok());
+    }
+
+    #[test]
+    fn test_default_policy_is_dilithium3_only() {
+        let policy = SignaturePolicy::default();
+
+        assert!(policy
+            .validate_algorithm(&SignatureAlgorithm::Dilithium3)
+            .is_ok());
+        assert!(policy
+            .validate_algorithm(&SignatureAlgorithm::Dilithium5)
+            .is_err());
+        assert!(policy
+            .validate_algorithm(&SignatureAlgorithm::Falcon1024)
+            .is_err());
+        assert!(policy
+            .validate_algorithm(&SignatureAlgorithm::SphincsSha256128s)
+            .is_err());
     }
 
     #[test]
@@ -268,7 +286,7 @@ mod tests {
 
     #[test]
     fn test_algorithm_name_parsing() {
-        let policy = SignaturePolicy::default();
+        let policy = SignaturePolicy::allow_all_pqc();
 
         assert_eq!(
             policy.validate_algorithm_name("dilithium3").unwrap(),

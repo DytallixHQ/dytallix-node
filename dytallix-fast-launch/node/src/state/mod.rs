@@ -167,6 +167,16 @@ impl State {
     ) -> Result<(), String> {
         let mut sender = self.get_account(from);
 
+        if from == to {
+            sender.sub_balance(fee_denom, fee)?;
+            sender.nonce += 1;
+
+            self.accounts.insert(from.to_string(), sender.clone());
+            let _ = self.storage.set_balances_db(from, &sender.balances);
+            let _ = self.storage.set_nonce_db(from, sender.nonce);
+            return Ok(());
+        }
+
         // Subtract amount from sender
         sender.sub_balance(denom, amount)?;
         // Subtract fee from sender (fees are always in fee_denom, typically "udgt")
@@ -235,5 +245,34 @@ impl State {
         } else {
             0
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn self_transfer_only_persists_fee_and_single_nonce_increment() {
+        let mut state = State::new_for_test();
+        let storage = state.storage.clone();
+
+        state.set_balance("alice", "udgt", 10_000_000);
+        state.set_balance("alice", "udrt", 100_000_000);
+
+        state
+            .apply_transfer("alice", "alice", "udrt", 100_000_000, "udgt", 3_000_000)
+            .expect("self-transfer should succeed");
+
+        let cached = state.snapshot_account("alice");
+        assert_eq!(cached.balance_of("udgt"), 7_000_000);
+        assert_eq!(cached.balance_of("udrt"), 100_000_000);
+        assert_eq!(cached.nonce, 1);
+
+        let persisted_state = State::new(storage);
+        let persisted = persisted_state.snapshot_account("alice");
+        assert_eq!(persisted.balance_of("udgt"), 7_000_000);
+        assert_eq!(persisted.balance_of("udrt"), 100_000_000);
+        assert_eq!(persisted.nonce, 1);
     }
 }

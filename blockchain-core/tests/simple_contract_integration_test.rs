@@ -7,11 +7,17 @@ use dytallix_node::types::{
 };
 use dytallix_pqc::{Signature, SignatureAlgorithm};
 use std::sync::Arc;
+use uuid::Uuid;
+
+async fn create_test_storage() -> Arc<StorageManager> {
+    let data_dir = std::env::temp_dir().join(format!("dytallix-contract-test-{}", Uuid::new_v4()));
+    Arc::new(StorageManager::new_at_path(&data_dir, "dyt-test-1").await.unwrap())
+}
 
 #[tokio::test]
 async fn test_basic_contract_integration() {
     // Initialize components
-    let storage = Arc::new(StorageManager::new().await.unwrap());
+    let storage = create_test_storage().await;
     let runtime = Arc::new(DytallixRuntime::new(storage.clone()).unwrap());
     let pqc_manager = Arc::new(PQCManager::new().unwrap());
 
@@ -71,7 +77,7 @@ async fn test_basic_contract_integration() {
 #[tokio::test]
 async fn test_contract_call_integration() {
     // Initialize components
-    let storage = Arc::new(StorageManager::new().await.unwrap());
+    let storage = create_test_storage().await;
     let runtime = Arc::new(DytallixRuntime::new(storage.clone()).unwrap());
     let pqc_manager = Arc::new(PQCManager::new().unwrap());
 

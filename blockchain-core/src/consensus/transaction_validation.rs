@@ -351,10 +351,6 @@ impl TransactionValidator {
             return Err(anyhow!("Transfer amount cannot be zero"));
         }
 
-        if tx.from == tx.to {
-            return Err(anyhow!("Cannot transfer to self"));
-        }
-
         // Additional validation logic would go here
         Ok(())
     }

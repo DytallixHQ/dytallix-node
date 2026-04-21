@@ -183,6 +183,11 @@ impl DytallixRuntime {
             return Err("Insufficient balance".into());
         }
 
+        if from == to {
+            info!("Transfer: {from} -> {to} amount: {amount} (self-transfer no-op)");
+            return Ok(());
+        }
+
         let to_balance = state.balances.get(to).copied().unwrap_or(0);
 
         state

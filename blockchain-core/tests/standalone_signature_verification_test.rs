@@ -444,12 +444,12 @@ async fn test_integration_comprehensive() -> Result<()> {
 pub async fn run_all_tests() -> Result<()> {
     println!("=== Running Signature Verification Integration Tests ===");
 
-    test_signature_verification_basic_flow().await?;
-    test_ai_integration_manager().await?;
-    test_unregistered_oracle_rejection().await?;
-    test_nonce_replay_protection().await?;
-    test_multiple_oracles().await?;
-    test_integration_comprehensive().await?;
+    test_signature_verification_basic_flow()?;
+    test_ai_integration_manager()?;
+    test_unregistered_oracle_rejection()?;
+    test_nonce_replay_protection()?;
+    test_multiple_oracles()?;
+    test_integration_comprehensive()?;
 
     println!("=== All tests passed! ===");
     Ok(())

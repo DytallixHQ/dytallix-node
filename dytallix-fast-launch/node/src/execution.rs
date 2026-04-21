@@ -350,40 +350,7 @@ fn execute_message(
             ctx.consume_gas(120, "kv_write_from")?;
             ctx.consume_gas(120, "kv_write_to")?;
 
-            // Record the transfer state changes
-            let sender_old_balance = state.balance_of(from, denom);
-            let recipient_old_balance = state.balance_of(to, denom);
-
-            // Check sufficient funds
-            if sender_old_balance < *amount {
-                // Note: This shouldn't happen as validation should catch it, but being defensive
-                return Err(GasError::OutOfGas {
-                    required: *amount as u64,
-                    available: sender_old_balance as u64,
-                });
-            }
-
-            let sender_new_balance = sender_old_balance - amount;
-            let recipient_new_balance = recipient_old_balance + amount;
-
-            ctx.record_state_change(
-                from.clone(),
-                denom.clone(),
-                sender_old_balance,
-                sender_new_balance,
-            );
-            ctx.record_state_change(
-                to.clone(),
-                denom.clone(),
-                recipient_old_balance,
-                recipient_new_balance,
-            );
-
-            // Apply the transfer
-            state.set_balance(from, denom, sender_new_balance);
-            state.set_balance(to, denom, recipient_new_balance);
-
-            Ok(())
+            apply_send_balance_change(state, ctx, from, to, denom, *amount)
         }
         TxMessage::Data { data, .. } => {
             // Charge gas proportional to data size (1 gas per byte)
@@ -646,6 +613,49 @@ fn validate_transaction(tx: &Transaction, state: &mut State) -> Result<(), Execu
     Ok(())
 }
 
+fn apply_send_balance_change(
+    state: &mut State,
+    ctx: &mut ExecutionContext,
+    from: &str,
+    to: &str,
+    denom: &str,
+    amount: u128,
+) -> Result<(), GasError> {
+    if from == to {
+        return Ok(());
+    }
+
+    let sender_old_balance = state.balance_of(from, denom);
+    if sender_old_balance < amount {
+        return Err(GasError::OutOfGas {
+            required: amount as u64,
+            available: sender_old_balance as u64,
+        });
+    }
+
+    let recipient_old_balance = state.balance_of(to, denom);
+    let sender_new_balance = sender_old_balance - amount;
+    let recipient_new_balance = recipient_old_balance.saturating_add(amount);
+
+    ctx.record_state_change(
+        from.to_string(),
+        denom.to_string(),
+        sender_old_balance,
+        sender_new_balance,
+    );
+    ctx.record_state_change(
+        to.to_string(),
+        denom.to_string(),
+        recipient_old_balance,
+        recipient_new_balance,
+    );
+
+    state.set_balance(from, denom, sender_new_balance);
+    state.set_balance(to, denom, recipient_new_balance);
+
+    Ok(())
+}
+
 /// Execute the transfer operation with gas metering
 fn execute_transfer(
     tx: &Transaction,
@@ -661,32 +671,7 @@ fn execute_transfer(
     // Use the denom from the transaction (defaults to "udgt" for backward compatibility)
     let denom = &tx.denom;
 
-    // Record the transfer state changes
-    let sender_old_balance = state.balance_of(&tx.from, denom);
-    let recipient_old_balance = state.balance_of(&tx.to, denom);
-
-    // NOTE: We assume sufficient funds after upfront fee; future work can add explicit checks
-    let sender_new_balance = sender_old_balance - tx.amount;
-    let recipient_new_balance = recipient_old_balance + tx.amount;
-
-    ctx.record_state_change(
-        tx.from.clone(),
-        denom.to_string(),
-        sender_old_balance,
-        sender_new_balance,
-    );
-    ctx.record_state_change(
-        tx.to.clone(),
-        denom.to_string(),
-        recipient_old_balance,
-        recipient_new_balance,
-    );
-
-    // Apply the transfer
-    state.set_balance(&tx.from, denom, sender_new_balance);
-    state.set_balance(&tx.to, denom, recipient_new_balance);
-
-    Ok(())
+    apply_send_balance_change(state, ctx, &tx.from, &tx.to, denom, tx.amount)
 }
 
 /// Estimate transaction size for gas calculation
@@ -767,6 +752,22 @@ mod tests {
         State::new(storage)
     }
 
+    fn account_snapshot(state: &State, addr: &str) -> (u128, u128, u64) {
+        let account = state.snapshot_account(addr);
+        (
+            account.balance_of("udgt"),
+            account.balance_of("udrt"),
+            account.nonce,
+        )
+    }
+
+    fn tracked_supply(state: &State, addresses: &[&str], denom: &str) -> u128 {
+        addresses
+            .iter()
+            .map(|address| state.snapshot_account(address).balance_of(denom))
+            .sum()
+    }
+
     #[test]
     fn test_upfront_fee_calculation() {
         let ctx = ExecutionContext::new(25000, 1500);
@@ -843,5 +844,149 @@ mod tests {
             .as_ref()
             .unwrap()
             .contains("InsufficientFunds"));
+    }
+
+    #[test]
+    fn self_transfer_same_address_keeps_token_balance_and_consumes_fee_once() {
+        let mut state = create_test_state();
+        let gas_schedule = GasSchedule::default();
+
+        state.set_balance("alice", "udgt", 10_000_000);
+        state.set_balance("alice", "udrt", 100_000_000);
+
+        let tx = Transaction::new(
+            "self_udrt_1".to_string(),
+            "alice".to_string(),
+            "alice".to_string(),
+            100_000_000,
+            3_000_000,
+            0,
+            Some("sig".to_string()),
+        )
+        .with_denom("udrt")
+        .with_gas(3_000_000, 1);
+
+        let result = execute_transaction(&tx, &mut state, 100, 0, &gas_schedule, None);
+        let (udgt, udrt, nonce) = account_snapshot(&state, "alice");
+
+        assert!(result.success);
+        assert_eq!(result.receipt.status, TxStatus::Success);
+        assert_eq!(udgt, 7_000_000);
+        assert_eq!(udrt, 100_000_000);
+        assert_eq!(nonce, 1);
+    }
+
+    #[test]
+    fn repeated_self_transfer_does_not_increase_balance_or_supply() {
+        let mut state = create_test_state();
+        let gas_schedule = GasSchedule::default();
+
+        state.set_balance("alice", "udgt", 10_000_000);
+        state.set_balance("alice", "udrt", 100_000_000);
+        state.set_balance("bob", "udrt", 25_000_000);
+
+        let initial_udrt_supply = tracked_supply(&state, &["alice", "bob"], "udrt");
+
+        let tx_one = Transaction::new(
+            "self_udrt_1".to_string(),
+            "alice".to_string(),
+            "alice".to_string(),
+            100_000_000,
+            3_000_000,
+            0,
+            Some("sig".to_string()),
+        )
+        .with_denom("udrt")
+        .with_gas(3_000_000, 1);
+
+        let tx_two = Transaction::new(
+            "self_udrt_2".to_string(),
+            "alice".to_string(),
+            "alice".to_string(),
+            50_000_000,
+            2_000_000,
+            1,
+            Some("sig".to_string()),
+        )
+        .with_denom("udrt")
+        .with_gas(2_000_000, 1);
+
+        let first = execute_transaction(&tx_one, &mut state, 100, 0, &gas_schedule, None);
+        let second = execute_transaction(&tx_two, &mut state, 100, 1, &gas_schedule, None);
+        let (udgt, udrt, nonce) = account_snapshot(&state, "alice");
+
+        assert!(first.success);
+        assert!(second.success);
+        assert_eq!(udgt, 5_000_000);
+        assert_eq!(udrt, 100_000_000);
+        assert_eq!(nonce, 2);
+        assert_eq!(tracked_supply(&state, &["alice", "bob"], "udrt"), initial_udrt_supply);
+    }
+
+    #[test]
+    fn normal_transfer_still_debits_sender_and_credits_recipient() {
+        let mut state = create_test_state();
+        let gas_schedule = GasSchedule::default();
+
+        state.set_balance("alice", "udgt", 10_000_000);
+        state.set_balance("alice", "udrt", 100_000_000);
+        state.set_balance("bob", "udrt", 0);
+
+        let tx = Transaction::new(
+            "alice_to_bob_udrt".to_string(),
+            "alice".to_string(),
+            "bob".to_string(),
+            20_000_000,
+            3_000_000,
+            0,
+            Some("sig".to_string()),
+        )
+        .with_denom("udrt")
+        .with_gas(3_000_000, 1);
+
+        let result = execute_transaction(&tx, &mut state, 100, 0, &gas_schedule, None);
+        let alice = state.snapshot_account("alice");
+        let bob = state.snapshot_account("bob");
+
+        assert!(result.success);
+        assert_eq!(alice.balance_of("udgt"), 7_000_000);
+        assert_eq!(alice.balance_of("udrt"), 80_000_000);
+        assert_eq!(alice.nonce, 1);
+        assert_eq!(bob.balance_of("udrt"), 20_000_000);
+    }
+
+    #[test]
+    fn self_send_only_changes_supply_by_fee_denom() {
+        let mut state = create_test_state();
+        let gas_schedule = GasSchedule::default();
+
+        state.set_balance("alice", "udgt", 12_000_000);
+        state.set_balance("alice", "udrt", 100_000_000);
+        state.set_balance("bob", "udgt", 4_000_000);
+        state.set_balance("bob", "udrt", 25_000_000);
+
+        let initial_udgt_supply = tracked_supply(&state, &["alice", "bob"], "udgt");
+        let initial_udrt_supply = tracked_supply(&state, &["alice", "bob"], "udrt");
+
+        let tx = Transaction::new(
+            "self_udgt_1".to_string(),
+            "alice".to_string(),
+            "alice".to_string(),
+            5_000_000,
+            3_000_000,
+            0,
+            Some("sig".to_string()),
+        )
+        .with_denom("udgt")
+        .with_gas(3_000_000, 1);
+
+        let result = execute_transaction(&tx, &mut state, 100, 0, &gas_schedule, None);
+
+        assert!(result.success);
+        assert_eq!(tracked_supply(&state, &["alice", "bob"], "udrt"), initial_udrt_supply);
+        assert_eq!(
+            tracked_supply(&state, &["alice", "bob"], "udgt"),
+            initial_udgt_supply - 3_000_000
+        );
     }
 }

@@ -148,6 +148,10 @@ impl ComplianceAPI {
         Self { audit_manager }
     }
 
+    fn elapsed_ms(start_time: &std::time::Instant) -> u64 {
+        start_time.elapsed().as_millis().max(1) as u64
+    }
+
     /// Generate a compliance report based on the provided parameters
     pub async fn generate_compliance_report(
         &self,
@@ -181,7 +185,7 @@ impl ComplianceAPI {
                     },
                     metadata: ReportMetadata {
                         generated_at: Utc::now(),
-                        generation_time_ms: start_time.elapsed().as_millis() as u64,
+                        generation_time_ms: Self::elapsed_ms(&start_time),
                         audit_version: "1.0.0".to_string(),
                         report_id,
                         requested_by: None,
@@ -207,7 +211,7 @@ impl ComplianceAPI {
 
         let metadata = ReportMetadata {
             generated_at: Utc::now(),
-            generation_time_ms: start_time.elapsed().as_millis() as u64,
+            generation_time_ms: Self::elapsed_ms(&start_time),
             audit_version: "1.0.0".to_string(),
             report_id,
             requested_by: None, // Would be populated from authentication context
@@ -249,7 +253,7 @@ impl ComplianceAPI {
                     file_size: None,
                     metadata: ReportMetadata {
                         generated_at: Utc::now(),
-                        generation_time_ms: start_time.elapsed().as_millis() as u64,
+                        generation_time_ms: Self::elapsed_ms(&start_time),
                         audit_version: "1.0.0".to_string(),
                         report_id,
                         requested_by: None,
@@ -278,7 +282,7 @@ impl ComplianceAPI {
                     file_size: None,
                     metadata: ReportMetadata {
                         generated_at: Utc::now(),
-                        generation_time_ms: start_time.elapsed().as_millis() as u64,
+                        generation_time_ms: Self::elapsed_ms(&start_time),
                         audit_version: "1.0.0".to_string(),
                         report_id,
                         requested_by: None,
@@ -302,7 +306,7 @@ impl ComplianceAPI {
 
         let metadata = ReportMetadata {
             generated_at: Utc::now(),
-            generation_time_ms: start_time.elapsed().as_millis() as u64,
+            generation_time_ms: Self::elapsed_ms(&start_time),
             audit_version: "1.0.0".to_string(),
             report_id,
             requested_by: None,

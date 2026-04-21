@@ -212,7 +212,8 @@ mod tests {
 
     #[test]
     fn test_circuit_breaker_functionality() {
-        let mut circuit = CircuitBreakerContext::new(3.0, 60000);
+        let mut circuit = CircuitBreakerContext::new(0.8, 60);
+        circuit.min_requests = 3;
 
         // Initially closed
         assert!(circuit.is_closed());

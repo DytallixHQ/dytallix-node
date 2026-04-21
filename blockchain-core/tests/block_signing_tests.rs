@@ -1,5 +1,5 @@
-use blockchain_core::crypto::PQCManager; // crate name may differ
-use blockchain_core::types::{Block, BlockHeader, Transaction};
+use dytallix_node::crypto::PQCManager;
+use dytallix_node::types::BlockHeader;
 
 #[test]
 fn validator_address_derivation_stable() {
@@ -23,7 +23,7 @@ fn block_sign_verify_and_tamper() {
         state_root: "b".repeat(64),
         timestamp: 12345,
         validator: mgr.derive_validator_address(),
-        signature: blockchain_core::types::PQCBlockSignature {
+        signature: dytallix_node::types::PQCBlockSignature {
             signature: dytallix_pqc::Signature {
                 data: vec![],
                 algorithm: dytallix_pqc::SignatureAlgorithm::Dilithium5,

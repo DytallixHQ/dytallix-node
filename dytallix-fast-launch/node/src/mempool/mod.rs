@@ -264,7 +264,16 @@ impl Mempool {
         if let Some(messages) = &tx.messages {
             for message in messages {
                 match message {
-                    TxMessage::Send { denom, amount, .. } => add(denom, *amount),
+                    TxMessage::Send {
+                        from,
+                        to,
+                        denom,
+                        amount,
+                    } => {
+                        if from != to {
+                            add(denom, *amount);
+                        }
+                    }
                     TxMessage::Data { .. } => {
                         // Data messages don't require token reserves, only fee payment
                         // which is already handled above
@@ -278,7 +287,9 @@ impl Mempool {
             }
         } else {
             // Legacy fallback: use top-level amount/denom fields
-            add(&tx.denom, tx.amount);
+            if tx.from != tx.to {
+                add(&tx.denom, tx.amount);
+            }
         }
 
         required
@@ -1063,6 +1074,30 @@ mod policy_tests {
 
         let reason = unsupported_reserved_payload_reason(&tx).unwrap();
         assert!(reason.contains("governance write payloads"));
+    }
+
+    #[test]
+    fn self_transfer_reserves_fee_only() {
+        let tx = Transaction::base(
+            "0xselfreserve",
+            "dytallix1sender0000000000000000000000000000",
+            "dytallix1sender0000000000000000000000000000",
+            100_000_000,
+            5_000,
+            0,
+        )
+        .with_denom("udrt")
+        .with_messages(vec![TxMessage::Send {
+            from: "dytallix1sender0000000000000000000000000000".to_string(),
+            to: "dytallix1sender0000000000000000000000000000".to_string(),
+            denom: "udrt".to_string(),
+            amount: 100_000_000,
+        }]);
+
+        let reserved = Mempool::reserved_amounts_for_tx(&tx);
+
+        assert_eq!(reserved.get("udgt"), Some(&5_000));
+        assert!(!reserved.contains_key("udrt"));
     }
 }
 

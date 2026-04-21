@@ -51,7 +51,7 @@ impl Default for NodeConfig {
             database_url: "sqlite://dytallix.db".to_string(),
             database_pool_size: 10,
             api_key: "placeholder_api_key".to_string(),
-            jwt_secret: "placeholder_jwt_secret".to_string(),
+            jwt_secret: "placeholder_jwt_secret_for_local_development_only_12345".to_string(),
             rate_limit: 1000,
             log_level: "info".to_string(),
             debug_mode: false,
@@ -66,6 +66,15 @@ impl Default for NodeConfig {
 }
 
 impl NodeConfig {
+    async fn get_secret_any(secret_manager: &SecretManager, names: &[&str]) -> Option<String> {
+        for name in names {
+            if let Ok(value) = secret_manager.get_secret(name).await {
+                return Some(value);
+            }
+        }
+        None
+    }
+
     /// Load configuration using the secrets manager
     ///
     /// This method demonstrates the recommended pattern for loading
@@ -125,27 +134,21 @@ impl NodeConfig {
         }
 
         // API configuration
-        match secret_manager.get_secret("api/api_key").await {
-            Ok(api_key) => {
-                config.api_key = api_key;
-                debug!("API key loaded from secrets");
-            }
-            Err(_) => {
-                warn!("API key not found in secrets, using placeholder");
-            }
+        if let Some(api_key) = Self::get_secret_any(secret_manager, &["api/api_key", "API_KEY"]).await {
+            config.api_key = api_key;
+            debug!("API key loaded from secrets");
+        } else {
+            warn!("API key not found in secrets, using placeholder");
         }
 
-        match secret_manager.get_secret("api/jwt_secret").await {
-            Ok(jwt_secret) => {
-                config.jwt_secret = jwt_secret;
-                debug!("JWT secret loaded from secrets");
-            }
-            Err(_) => {
-                warn!("JWT secret not found in secrets, using placeholder");
-            }
+        if let Some(jwt_secret) = Self::get_secret_any(secret_manager, &["api/jwt_secret", "JWT_SECRET"]).await {
+            config.jwt_secret = jwt_secret;
+            debug!("JWT secret loaded from secrets");
+        } else {
+            warn!("JWT secret not found in secrets, using placeholder");
         }
 
-        if let Ok(rate_limit_str) = secret_manager.get_secret("api/rate_limit").await {
+        if let Some(rate_limit_str) = Self::get_secret_any(secret_manager, &["api/rate_limit", "RATE_LIMIT"]).await {
             if let Ok(rate_limit) = rate_limit_str.parse::<u32>() {
                 config.rate_limit = rate_limit;
             }
@@ -274,7 +277,7 @@ impl NodeConfig {
             warn!("Using placeholder API key - this is insecure for production");
         }
 
-        if self.jwt_secret == "placeholder_jwt_secret" {
+        if self.jwt_secret.contains("placeholder_jwt_secret") {
             warn!("Using placeholder JWT secret - this is insecure for production");
         }
 

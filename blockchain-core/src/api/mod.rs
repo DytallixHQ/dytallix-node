@@ -529,7 +529,12 @@ pub async fn start_api_server() -> Result<(), Box<dyn std::error::Error>> {
                         n
                     }
                 };
-                if sender_balance < req.amount + req.fee.unwrap_or(MIN_FEE) {
+                let required_balance = if req.from == req.to {
+                    req.fee.unwrap_or(MIN_FEE)
+                } else {
+                    req.amount + req.fee.unwrap_or(MIN_FEE)
+                };
+                if sender_balance < required_balance {
                     return Ok(warp::reply::with_status(
                         warp::reply::json(&ApiResponse::<()> {
                             success: false,

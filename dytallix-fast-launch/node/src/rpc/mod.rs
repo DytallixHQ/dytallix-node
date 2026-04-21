@@ -292,7 +292,16 @@ fn validate_signed_tx(
     // Add amounts from messages
     for msg in &signed_tx.tx.msgs {
         match msg {
-            Msg::Send { denom, amount, .. } => {
+            Msg::Send {
+                from,
+                to,
+                denom,
+                amount,
+            } => {
+                if from == to {
+                    continue;
+                }
+
                 // Normalize denomination to lowercase micro-denom
                 let normalized_denom = denom.to_ascii_lowercase();
 

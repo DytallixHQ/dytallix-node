@@ -500,13 +500,18 @@ impl AuditTrailManager {
     /// Get audit entries for a specific transaction
     pub async fn get_transaction_audit_trail(&self, transaction_hash: &TxHash) -> Vec<AuditEntry> {
         let index = self.audit_index.read().await;
+        let pending = self.pending_entries.read().await;
         let storage = self.audit_storage.read().await;
 
         if let Some(audit_ids) = index.get(transaction_hash) {
             audit_ids
                 .iter()
-                .filter_map(|id| storage.get(id))
-                .cloned()
+                .filter_map(|id| {
+                    storage
+                        .get(id)
+                        .cloned()
+                        .or_else(|| pending.iter().find(|entry| entry.audit_id == *id).cloned())
+                })
                 .collect()
         } else {
             Vec::new()

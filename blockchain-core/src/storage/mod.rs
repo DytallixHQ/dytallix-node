@@ -93,22 +93,30 @@ pub type _KVSnapshotResult = Result<Vec<(Vec<u8>, Vec<u8>)>, Box<dyn std::error:
 impl StorageManager {
     /// Open or create storage at data_dir. If empty, will initialize genesis (balances)
     pub async fn new() -> Result<Self, Box<dyn std::error::Error>> {
-        // Fallback to env path if provided
-        let data_dir = std::env::var("DYT_DATA_DIR").unwrap_or_else(|_| "./data".to_string());
         let chain_id = std::env::var("DYT_CHAIN_ID").unwrap_or_else(|_| "dyt-local-1".to_string());
-        std::fs::create_dir_all(&data_dir)?;
+        let data_dir = std::env::var("DYT_DATA_DIR").unwrap_or_else(|_| "./data".to_string());
+        Self::new_at_path(data_dir, &chain_id).await
+    }
+
+    /// Open or create storage at an explicit data directory.
+    pub async fn new_at_path<P: AsRef<Path>>(
+        data_dir: P,
+        chain_id: &str,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let data_dir = data_dir.as_ref();
+        std::fs::create_dir_all(data_dir)?;
         let mut opts = Options::default();
         opts.create_if_missing(true);
-        let db_path = Path::new(&data_dir).join("node.db");
+        let db_path = data_dir.join("node.db");
         let db = DB::open(&opts, db_path)?;
         let mgr = Self {
             db: Arc::new(db),
             _account_cache: Arc::new(RwLock::new(HashMap::new())),
         };
-        mgr.ensure_chain_id(&chain_id)?;
+        mgr.ensure_chain_id(chain_id)?;
         // If height not set treat as fresh and init genesis
         if mgr.get_height()? == 0 {
-            mgr.init_genesis(&chain_id).await?;
+            mgr.init_genesis(chain_id).await?;
         }
         Ok(mgr)
     }
@@ -263,16 +271,27 @@ impl StorageManager {
         let mut sender = self
             .get_account_state(&tx.from)
             .map_err(|e| e.to_string())?;
-        let mut recipient = self.get_account_state(&tx.to).map_err(|e| e.to_string())?;
         if sender.nonce != tx.nonce {
             return Err("nonce_mismatch".into());
         }
-        let total = tx.amount.checked_add(tx.fee).ok_or("overflow")?;
-        if sender.balance < total {
+        let required = if tx.from == tx.to {
+            tx.fee
+        } else {
+            tx.amount.checked_add(tx.fee).ok_or("overflow")?
+        };
+        if sender.balance < required {
             return Err("insufficient_balance".into());
         }
-        sender.balance -= total;
+        sender.balance -= required;
         sender.nonce += 1;
+
+        if tx.from == tx.to {
+            self.store_account_state(&tx.from, &sender)
+                .map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+
+        let mut recipient = self.get_account_state(&tx.to).map_err(|e| e.to_string())?;
         recipient.balance = recipient.balance.saturating_add(tx.amount);
         self.store_account_state(&tx.from, &sender)
             .map_err(|e| e.to_string())?;
@@ -596,10 +615,18 @@ pub fn _build_block_with_state(
 mod tests {
     use super::*;
     use crate::types::{TxReceipt, TxStatus};
+    use uuid::Uuid;
+
+    async fn create_test_storage_manager() -> StorageManager {
+        let data_dir = std::env::temp_dir().join(format!("dytallix-storage-test-{}", Uuid::new_v4()));
+        StorageManager::new_at_path(&data_dir, "dyt-test-1")
+            .await
+            .unwrap()
+    }
 
     #[tokio::test]
     async fn test_store_get_receipt_roundtrip() {
-        let mgr = StorageManager::new().await.unwrap();
+        let mgr = create_test_storage_manager().await;
         let rcpt = TxReceipt {
             tx_hash: "0xdeadbeef".into(),
             block_number: 1,
@@ -616,5 +643,30 @@ mod tests {
         mgr._store_receipt(&rcpt).await.unwrap();
         let fetched = mgr.get_receipt(&rcpt.tx_hash).await.unwrap().unwrap();
         assert_eq!(fetched, rcpt);
+    }
+
+    #[tokio::test]
+    async fn test_apply_transfer_self_send_only_charges_fee() {
+        let mgr = create_test_storage_manager().await;
+        let sender = crate::types::AccountState {
+            balance: 100,
+            nonce: 0,
+            ..Default::default()
+        };
+        mgr.store_account_state("dyt1self", &sender).unwrap();
+
+        let tx = crate::types::TransferTransaction::new(
+            "dyt1self".to_string(),
+            "dyt1self".to_string(),
+            50,
+            3,
+            0,
+        );
+
+        mgr._apply_transfer(&tx).unwrap();
+
+        let account = mgr.get_account_state("dyt1self").unwrap();
+        assert_eq!(account.balance, 97);
+        assert_eq!(account.nonce, 1);
     }
 }

@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VestingSchedule {
     /// Total amount to be vested
+    #[serde(with = "crate::types::serde_u128_string")]
     pub total_amount: Amount,
     /// Cliff period in seconds (tokens locked completely)
     pub cliff_duration: u64,
@@ -51,6 +52,7 @@ pub struct DGTAllocation {
     /// Recipient address
     pub address: Address,
     /// Allocation amount
+    #[serde(with = "crate::types::serde_u128_string")]
     pub amount: Amount,
     /// Vesting schedule (None = unlocked immediately)
     pub vesting: Option<VestingSchedule>,
@@ -62,6 +64,7 @@ pub struct DRTEmissionConfig {
     /// Annual inflation rate (5% = 500 basis points)
     pub annual_inflation_rate: u16,
     /// Initial supply (0 for DRT)
+    #[serde(with = "crate::types::serde_u128_string")]
     pub initial_supply: Amount,
     /// Emission breakdown percentages (must sum to 100)
     pub emission_breakdown: EmissionBreakdown,
@@ -106,6 +109,7 @@ pub struct BurnRulesConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GovernanceConfig {
     /// Minimum DGT tokens required to create a proposal
+    #[serde(with = "crate::types::serde_u128_string")]
     pub proposal_threshold: Amount,
     /// Voting period in blocks
     pub voting_period: BlockNumber,
@@ -119,6 +123,7 @@ pub struct GovernanceConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StakingConfig {
     /// Minimum stake required to become a validator
+    #[serde(with = "crate::types::serde_u128_string")]
     pub minimum_validator_stake: Amount,
     /// Maximum number of validators
     pub max_validators: u32,
@@ -129,6 +134,7 @@ pub struct StakingConfig {
     /// Blocks to consider validator offline
     pub offline_threshold: BlockNumber,
     /// Emission rate per block (in uDRT)
+    #[serde(with = "crate::types::serde_u128_string")]
     pub emission_per_block: u128,
 }
 
@@ -199,21 +205,22 @@ impl GenesisConfig {
         let genesis_time = DateTime::parse_from_rfc3339("2025-08-03T19:00:26.000000000Z")
             .unwrap()
             .with_timezone(&Utc);
+        let dgt: Amount = 1_000_000_000_000_000_000;
 
         // DGT allocations with vesting schedules
         let dgt_allocations = vec![
             // Community Treasury - 400M DGT, unlocked
             DGTAllocation {
                 address: "0xCommunityTreasury".to_string(),
-                amount: 400_000_000_000_000_000, // 400M tokens (assuming 18 decimals)
+                amount: 400_000_000u128 * dgt,
                 vesting: None,
             },
             // Staking Rewards - 250M DGT, 4-year linear vesting
             DGTAllocation {
                 address: "0xStakingRewards".to_string(),
-                amount: 250_000_000_000_000_000, // 250M tokens
+                amount: 250_000_000u128 * dgt,
                 vesting: Some(VestingSchedule {
-                    total_amount: 250_000_000_000_000_000,
+                    total_amount: 250_000_000u128 * dgt,
                     cliff_duration: 0, // No cliff for staking rewards
                     vesting_duration: 4 * 365 * 24 * 60 * 60, // 4 years in seconds
                     start_time: genesis_time.timestamp() as u64,
@@ -222,9 +229,9 @@ impl GenesisConfig {
             // Dev Team - 150M DGT, 1-year cliff + 3-year linear vesting
             DGTAllocation {
                 address: "0xDevTeam".to_string(),
-                amount: 150_000_000_000_000_000, // 150M tokens
+                amount: 150_000_000u128 * dgt,
                 vesting: Some(VestingSchedule {
-                    total_amount: 150_000_000_000_000_000,
+                    total_amount: 150_000_000u128 * dgt,
                     cliff_duration: 365 * 24 * 60 * 60, // 1 year cliff
                     vesting_duration: 4 * 365 * 24 * 60 * 60, // Total 4 years (1 cliff + 3 vesting)
                     start_time: genesis_time.timestamp() as u64,
@@ -233,9 +240,9 @@ impl GenesisConfig {
             // Validators - 100M DGT, 6-month cliff + 2-year linear vesting
             DGTAllocation {
                 address: "0xValidators".to_string(),
-                amount: 100_000_000_000_000_000, // 100M tokens
+                amount: 100_000_000u128 * dgt,
                 vesting: Some(VestingSchedule {
-                    total_amount: 100_000_000_000_000_000,
+                    total_amount: 100_000_000u128 * dgt,
                     cliff_duration: 6 * 30 * 24 * 60 * 60, // 6 months cliff (approx)
                     vesting_duration: (6 + 24) * 30 * 24 * 60 * 60, // Total 2.5 years (6m cliff + 2y vesting)
                     start_time: genesis_time.timestamp() as u64,
@@ -244,9 +251,9 @@ impl GenesisConfig {
             // Ecosystem Fund - 100M DGT, 5-year linear vesting
             DGTAllocation {
                 address: "0xEcosystemFund".to_string(),
-                amount: 100_000_000_000_000_000, // 100M tokens
+                amount: 100_000_000u128 * dgt,
                 vesting: Some(VestingSchedule {
-                    total_amount: 100_000_000_000_000_000,
+                    total_amount: 100_000_000u128 * dgt,
                     cliff_duration: 0, // No cliff for ecosystem fund
                     vesting_duration: 5 * 365 * 24 * 60 * 60, // 5 years in seconds
                     start_time: genesis_time.timestamp() as u64,
@@ -277,8 +284,7 @@ impl GenesisConfig {
         let validators = vec![
             ValidatorInfo {
                 address: "dyt1validator1000000000000000000000000000".to_string(),
-                // Using 32 DGT with 6 decimals instead of 18 to fit into u128
-                stake: 32_000_000_000_000u128, // 32 * 10^12 (represents 32 DGT if 12 decimals)
+                stake: 32u128 * dgt,
                 public_key: vec![0u8; 32],     // Placeholder - would be real keys in production
                 signature_algorithm: dytallix_pqc::SignatureAlgorithm::Dilithium5,
                 active: true,
@@ -286,7 +292,7 @@ impl GenesisConfig {
             },
             ValidatorInfo {
                 address: "dyt1validator2000000000000000000000000000".to_string(),
-                stake: 32_000_000_000_000u128,
+                stake: 32u128 * dgt,
                 public_key: vec![1u8; 32],
                 signature_algorithm: dytallix_pqc::SignatureAlgorithm::Dilithium5,
                 active: true,
@@ -294,7 +300,7 @@ impl GenesisConfig {
             },
             ValidatorInfo {
                 address: "dyt1validator3000000000000000000000000000".to_string(),
-                stake: 32_000_000_000_000u128,
+                stake: 32u128 * dgt,
                 public_key: vec![2u8; 32],
                 signature_algorithm: dytallix_pqc::SignatureAlgorithm::Dilithium5,
                 active: true,
@@ -304,7 +310,7 @@ impl GenesisConfig {
 
         // Governance configuration
         let governance = GovernanceConfig {
-            proposal_threshold: 1_000_000_000_000_000_000, // 1M DGT to create proposal
+            proposal_threshold: 1_000_000u128 * dgt,
             voting_period: 50400,                          // ~7 days assuming 12s block time
             quorum_threshold: 3333,                        // 33.33% quorum required
             pass_threshold: 5000,                          // 50% majority required
@@ -312,7 +318,7 @@ impl GenesisConfig {
 
         // Staking configuration
         let staking = StakingConfig {
-            minimum_validator_stake: 32_000_000_000_000u128,
+            minimum_validator_stake: 32u128 * dgt,
             max_validators: 100,
             double_sign_slash_rate: 500,   // 5% slash for double signing
             downtime_slash_rate: 100,      // 1% slash for downtime
@@ -340,7 +346,7 @@ impl GenesisConfig {
     pub fn _validate(&self) -> Result<(), String> {
         // Validate DGT total supply is 1 billion
         let total_dgt: Amount = self.dgt_allocations.iter().map(|a| a.amount).sum();
-        if total_dgt != 1_000_000_000_000_000_000 {
+        if total_dgt != 1_000_000_000_000_000_000_000_000_000 {
             return Err(format!(
                 "DGT total supply must be 1 billion, got {total_dgt}"
             ));
@@ -437,7 +443,7 @@ mod tests {
         let genesis = GenesisConfig::_mainnet();
         let json = genesis._to_json().unwrap();
         // Spot check one large number appears quoted
-        assert!(json.contains("\"400000000000000000\""));
+        assert!(json.contains("\"400000000000000000000000000\""));
     }
 
     #[test]
@@ -449,7 +455,7 @@ mod tests {
     #[test]
     fn test_dgt_total_supply() {
         let genesis = GenesisConfig::_mainnet();
-        assert_eq!(genesis._total_dgt_supply(), 1_000_000_000_000_000_000);
+        assert_eq!(genesis._total_dgt_supply(), 1_000_000_000_000_000_000_000_000_000);
     }
 
     #[test]

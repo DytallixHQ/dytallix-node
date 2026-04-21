@@ -1099,7 +1099,12 @@ impl ConsensusEngine {
                         // Deduct from sender (skip for genesis)
                         let sender_balance =
                             runtime.get_balance(&transfer_tx.from).await.unwrap_or(0);
-                        if sender_balance >= transfer_tx.amount {
+                        if transfer_tx.from == transfer_tx.to {
+                            runtime
+                                .increment_nonce(&transfer_tx.from)
+                                .await
+                                .map_err(|e| e.to_string())?;
+                        } else if sender_balance >= transfer_tx.amount {
                             runtime
                                 .set_balance(&transfer_tx.from, sender_balance - transfer_tx.amount)
                                 .await
@@ -1111,12 +1116,15 @@ impl ConsensusEngine {
                         }
                     }
 
-                    // Add to recipient
-                    let recipient_balance = runtime.get_balance(&transfer_tx.to).await.unwrap_or(0);
-                    runtime
-                        .set_balance(&transfer_tx.to, recipient_balance + transfer_tx.amount)
-                        .await
-                        .map_err(|e| e.to_string())?;
+                    if transfer_tx.from != transfer_tx.to {
+                        // Add to recipient
+                        let recipient_balance =
+                            runtime.get_balance(&transfer_tx.to).await.unwrap_or(0);
+                        runtime
+                            .set_balance(&transfer_tx.to, recipient_balance + transfer_tx.amount)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                    }
 
                     info!(
                         "Applied transfer: {} -> {} ({})",
