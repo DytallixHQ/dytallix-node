@@ -3,6 +3,15 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
+/// Fixed maximum supply of DGT, expressed in micro-units (udgt).
+/// 1,000,000,000 DGT * 1_000_000 udgt/DGT = 1e15 udgt. DGT is a fixed-supply
+/// governance token: it is fully allocated at genesis and never minted beyond
+/// this ceiling. (DRT, the reward/fee token, is uncapped and not affected.)
+pub const DGT_MAX_SUPPLY: u128 = 1_000_000_000_000_000;
+
+/// Storage key for the cumulative amount of DGT minted (genesis + any later mint).
+const DGT_MINTED_KEY: &str = "supply:dgt_minted";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccountState {
     pub balances: BTreeMap<String, u128>, // Multi-denomination balances
@@ -188,10 +197,11 @@ impl State {
         Ok(())
     }
 
-    /// Legacy apply_transfer for backward compatibility (uses udgt as default)
+    /// Legacy apply_transfer for backward compatibility. Transfers the value in
+    /// udgt, but charges the fee in udrt (DRT is the reward/fee token).
     pub fn apply_transfer_legacy(&mut self, from: &str, to: &str, amount: u128, fee: u128) {
         // Convert to new multi-denom format
-        let _ = self.apply_transfer(from, to, "udgt", amount, "udgt", fee);
+        let _ = self.apply_transfer(from, to, "udgt", amount, "udrt", fee);
     }
 
     /// Credit specific denomination to an address
@@ -205,6 +215,42 @@ impl State {
     /// Legacy credit for backward compatibility (uses udgt as default)
     pub fn credit_legacy(&mut self, addr: &str, amount: u128) {
         self.credit(addr, "udgt", amount);
+    }
+
+    /// Cumulative DGT minted so far (in udgt), persisted across restarts.
+    pub fn dgt_total_minted(&self) -> u128 {
+        self.storage
+            .db
+            .get(DGT_MINTED_KEY)
+            .ok()
+            .flatten()
+            .and_then(|v| bincode::deserialize::<u128>(&v).ok())
+            .unwrap_or(0)
+    }
+
+    fn set_dgt_total_minted(&self, total: u128) {
+        if let Ok(bytes) = bincode::serialize(&total) {
+            let _ = self.storage.db.put(DGT_MINTED_KEY, bytes);
+        }
+    }
+
+    /// Mint DGT (udgt) to an address, enforcing the fixed `DGT_MAX_SUPPLY` cap.
+    /// This is the ONLY path that increases DGT supply; genesis allocation and
+    /// any faucet DGT must go through it. Returns an error (minting nothing) if
+    /// the mint would push cumulative DGT past the cap.
+    pub fn mint_dgt(&mut self, addr: &str, amount: u128) -> Result<u128, String> {
+        let minted = self.dgt_total_minted();
+        let new_total = minted
+            .checked_add(amount)
+            .ok_or_else(|| "DGT mint overflow".to_string())?;
+        if new_total > DGT_MAX_SUPPLY {
+            return Err(format!(
+                "DGT supply cap exceeded: {minted} + {amount} > {DGT_MAX_SUPPLY}"
+            ));
+        }
+        self.credit(addr, "udgt", amount);
+        self.set_dgt_total_minted(new_total);
+        Ok(amount)
     }
 
     /// Set balance for specific denomination (used by execution engine)
