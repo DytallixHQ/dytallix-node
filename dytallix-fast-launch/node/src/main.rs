@@ -1,4 +1,5 @@
 use axum::{
+    http::{header, HeaderValue, Method},
     routing::{get, post},
     Extension, Router,
 };
@@ -11,7 +12,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::time::interval;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::CorsLayer;
 
 // Replace crate:: module imports with library crate path so binary can access lib modules
 use dytallix_fast_node::alerts::{load_alerts_config, AlertsEngine, NodeMetricsGatherer};
@@ -95,61 +96,10 @@ async fn main() -> anyhow::Result<()> {
         storage.set_chain_id(&chain_id)?;
     }
     let state = Arc::new(Mutex::new(State::new(storage.clone())));
-    // Prefund dev faucet account if not already
-    {
-        let mut st = state.lock().unwrap();
-        if st.balance_of("dyt1senderdev000000", "udgt") == 0 {
-            st.credit("dyt1senderdev000000", "udgt", 1_000_000);
-        }
-        // Prefund test account for E2E testing (always ensure funded)
-        let test_addr = "dytallix163c72b98928b743df68324e4569e84d817a9a78b";
-        let target_balance: u128 = 10_000_000_000;
-
-        // Prefund DGT (governance token)
-        let current_dgt = st.balance_of(test_addr, "udgt");
-        if current_dgt < target_balance {
-            st.credit(test_addr, "udgt", target_balance - current_dgt);
-            eprintln!(
-                "Prefunded test account {} with {} udgt",
-                test_addr, target_balance
-            );
-        }
-
-        // Prefund DRT (reward token)
-        let current_drt = st.balance_of(test_addr, "udrt");
-        if current_drt < target_balance {
-            st.credit(test_addr, "udrt", target_balance - current_drt);
-            eprintln!(
-                "Prefunded test account {} with {} udrt",
-                test_addr, target_balance
-            );
-        }
-
-        // Also prefund the testkey account for easier testing
-        let testkey_addr = "dytallix125074e67f966c5c9a0538381c2398a8966cda568";
-        let testkey_balance: u128 = 1_000_000_000; // 1000 tokens each
-        st.credit(testkey_addr, "udgt", testkey_balance);
-        st.credit(testkey_addr, "udrt", testkey_balance);
-        eprintln!(
-            "Prefunded testkey account {} with {} udgt and udrt",
-            testkey_addr, testkey_balance
-        );
-    }
-
-    // Prefund governance validator accounts (E2E) if governance enabled
-    if enable_governance {
-        let mut st = state.lock().unwrap();
-        for addr in [
-            "dyt1valoper000000000001",
-            "dyt1valoper000000000002",
-            "dyt1valoper000000000003",
-        ] {
-            if st.balance_of(addr, "udgt") == 0 {
-                // 2000 DGT (micro units) for deposits + voting
-                st.credit(addr, "udgt", 2_000_000_000);
-            }
-        }
-    }
+    // NOTE: initial balances are defined exclusively by genesis.json (applied
+    // below). The previous hardcoded dev/test/governance prefunds were removed
+    // so that genesis is the single source of truth for token allocation and the
+    // fixed DGT supply cap is not bypassed by out-of-band credits.
 
     // ---------------------------------------------------------------------
     // Genesis + ENV configuration loading (governance + staking parameters)
@@ -170,7 +120,17 @@ async fn main() -> anyhow::Result<()> {
                     for (denom, amount_val) in balances_obj.iter() {
                         if let Some(amount_str) = amount_val.as_str() {
                             if let Ok(amount) = amount_str.parse::<u128>() {
-                                st.credit(address, denom, amount);
+                                if denom == "udgt" {
+                                    // DGT is fixed-supply: mint through the capped
+                                    // path so genesis cannot exceed DGT_MAX_SUPPLY.
+                                    if let Err(e) = st.mint_dgt(address, amount) {
+                                        eprintln!(
+                                            "[genesis] DGT allocation rejected for {address}: {e}"
+                                        );
+                                    }
+                                } else {
+                                    st.credit(address, denom, amount);
+                                }
                             }
                         }
                     }
@@ -695,12 +655,28 @@ async fn main() -> anyhow::Result<()> {
         // Asset Registry endpoints
         .route("/asset/register", post(rpc::asset_register))
         .route("/asset/verify", post(rpc::asset_verify))
-        .route("/asset/get", post(rpc::asset_get))
-        // Dev faucet (credits balances directly; for local E2E only)
-        .route("/dev/faucet", post(rpc::dev_faucet))
-        // Ops simulation endpoints (pause/resume producer)
-        .route("/ops/pause", post(rpc::ops_pause))
-        .route("/ops/resume", post(rpc::ops_resume));
+        .route("/asset/get", post(rpc::asset_get));
+
+    // Dev/ops endpoints credit balances directly (/dev/faucet) and pause/resume
+    // block production (/ops/*). They are UNAUTHENTICATED, so exposing them on a
+    // public node lets anyone mint arbitrary balances or halt the chain. They are
+    // therefore disabled unless DYT_ENABLE_DEV_ENDPOINTS=true is explicitly set
+    // (intended for local end-to-end testing only).
+    let dev_endpoints_enabled = std::env::var("DYT_ENABLE_DEV_ENDPOINTS")
+        .ok()
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(false);
+    if dev_endpoints_enabled {
+        eprintln!(
+            "[WARN] Dev endpoints ENABLED (DYT_ENABLE_DEV_ENDPOINTS=true): \
+             /dev/faucet, /ops/pause and /ops/resume are unauthenticated. \
+             Never enable this on a public or production node."
+        );
+        app = app
+            .route("/dev/faucet", post(rpc::dev_faucet))
+            .route("/ops/pause", post(rpc::ops_pause))
+            .route("/ops/resume", post(rpc::ops_resume));
+    }
 
     // WASM contract routes
     #[cfg(feature = "contracts")]
@@ -790,12 +766,31 @@ async fn main() -> anyhow::Result<()> {
 
     app = app.layer(Extension(ctx));
 
-    // Add CORS middleware to allow frontend requests
+    // Add CORS middleware. Origins are restricted to an explicit allow-list
+    // (DYT_CORS_ORIGINS, comma-separated) rather than reflecting any origin, so
+    // untrusted web pages cannot drive the node's state-mutating endpoints from a
+    // visitor's browser. Defaults to local dev origins when unset.
+    let cors_origins: Vec<HeaderValue> = std::env::var("DYT_CORS_ORIGINS")
+        .ok()
+        .map(|raw| {
+            raw.split(',')
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .filter_map(|s| s.parse::<HeaderValue>().ok())
+                .collect::<Vec<_>>()
+        })
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| {
+            vec![
+                HeaderValue::from_static("http://localhost:3000"),
+                HeaderValue::from_static("http://127.0.0.1:3000"),
+            ]
+        });
     app = app.layer(
         CorsLayer::new()
-            .allow_origin(Any)
-            .allow_methods(Any)
-            .allow_headers(Any),
+            .allow_origin(cors_origins)
+            .allow_methods([Method::GET, Method::POST])
+            .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]),
     );
 
     if ws_enabled {

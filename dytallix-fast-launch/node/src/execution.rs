@@ -200,7 +200,7 @@ fn execute_multi_message_transaction(
         }
     };
 
-    let sender_balance = state.balance_of(&tx.from, "udgt");
+    let sender_balance = state.balance_of(&tx.from, "udrt");
     if sender_balance < upfront_fee {
         let err_msg =
             format!("InsufficientFunds: required {upfront_fee}, available {sender_balance}");
@@ -222,7 +222,7 @@ fn execute_multi_message_transaction(
 
     // Step 5: Deduct upfront fee and consume nonce
     let new_sender_balance = sender_balance - upfront_fee;
-    state.set_balance(&tx.from, "udgt", new_sender_balance);
+    state.set_balance(&tx.from, "udrt", new_sender_balance);
     state.increment_nonce(&tx.from);
 
     // Step 6: Consume minimal overhead gas
@@ -501,7 +501,7 @@ fn execute_single_message_transaction(
         }
     };
 
-    let sender_balance = state.balance_of(&tx.from, "udgt");
+    let sender_balance = state.balance_of(&tx.from, "udrt");
 
     if sender_balance < upfront_fee {
         let err_msg =
@@ -524,7 +524,7 @@ fn execute_single_message_transaction(
 
     // Step 5: Deduct upfront fee immediately (non-revertible on failure)
     let new_sender_balance = sender_balance - upfront_fee;
-    state.set_balance(&tx.from, "udgt", new_sender_balance);
+    state.set_balance(&tx.from, "udrt", new_sender_balance);
 
     // Consume the nonce once the transaction has passed validation and paid the upfront fee.
     // This matches common blockchain semantics (e.g., Ethereum): nonce is consumed even if execution fails.
