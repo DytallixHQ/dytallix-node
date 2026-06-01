@@ -280,8 +280,8 @@ fn validate_signed_tx(
     let mut required_per_denom: std::collections::HashMap<String, u128> =
         std::collections::HashMap::new();
 
-    // Add transaction fee (always in udgt for now)
-    let fee_denom = "udgt".to_string();
+    // Add transaction fee. Fees are paid in udrt (DRT is the reward/fee token).
+    let fee_denom = "udrt".to_string();
     required_per_denom.insert(fee_denom.clone(), signed_tx.tx.fee);
 
     // Add amounts from messages
@@ -996,7 +996,7 @@ pub async fn status(ctx: axum::Extension<RpcContext>) -> Json<serde_json::Value>
         "slot": slot,
         "gas": {
             "version": crate::gas::GAS_TABLE_VERSION,
-            "fee_denom": "udgt",
+            "fee_denom": "udrt",
             "min_gas_price": min_gas_price,
             "default_gas_limit": default_gas_limit,
             "default_signed_fee": u128::from(min_gas_price).saturating_mul(u128::from(default_gas_limit)),
@@ -1613,15 +1613,19 @@ pub async fn dev_faucet(
         .get("udrt")
         .and_then(|v| v.as_u64())
         .unwrap_or(10_000_000_000); // Default 10,000 DRT
-    {
+    let dgt_credited = {
         let mut st = ctx.state.lock().unwrap();
-        st.credit(addr, "udgt", udgt as u128);
+        // DRT (the fee/reward token) is uncapped and minted freely.
         st.credit(addr, "udrt", udrt as u128);
-    }
+        // DGT is fixed-supply: route through the capped mint path. Once the 1B
+        // cap is reached (it is, after genesis), this mints nothing — DGT is not
+        // faucet-distributed; it is allocated at genesis. DRT still dispenses.
+        st.mint_dgt(addr, udgt as u128).unwrap_or(0)
+    };
     Ok(Json(serde_json::json!({
         "success": true,
         "address": addr,
-        "credited": {"udgt": udgt.to_string(), "udrt": udrt.to_string()}
+        "credited": {"udgt": dgt_credited.to_string(), "udrt": udrt.to_string()}
     })))
 }
 
@@ -1820,8 +1824,8 @@ pub async fn staking_get_stats(
     // APY = reward_rate_bps / 100 (convert bps to percentage)
     let apy = (reward_rate_bps as f64) / 100.0;
 
-    // Get total DGT supply from state
-    let total_supply = 100_000_000_000_000u128; // 100M DGT in uDGT (6 decimals)
+    // Total DGT supply is fixed at the cap (fully allocated at genesis).
+    let total_supply = crate::state::DGT_MAX_SUPPLY; // 1,000,000,000 DGT in udgt
 
     // Calculate staking ratio
     let staking_ratio = if total_supply > 0 {
@@ -2089,7 +2093,9 @@ pub async fn faucet(
     {
         let mut state = ctx.state.lock().unwrap();
         if dgt_amount > 0 {
-            state.credit(address, "udgt", dgt_amount);
+            // DGT is fixed-supply; route through the capped mint path (mints
+            // nothing once the genesis-allocated cap is reached).
+            let _ = state.mint_dgt(address, dgt_amount);
         }
         if drt_amount > 0 {
             state.credit(address, "udrt", drt_amount);
