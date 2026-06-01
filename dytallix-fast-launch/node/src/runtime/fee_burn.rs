@@ -28,7 +28,7 @@ impl Default for FeeBurnConfig {
         Self {
             burn_rate_bps: 2500,            // 25% default burn rate
             min_burn_threshold: 1000,       // 1000 micro-tokens minimum
-            burn_token: "udgt".to_string(), // Burn DGT fees by default
+            burn_token: "udrt".to_string(), // Fees are paid and burned in DRT
             enabled: true,
         }
     }

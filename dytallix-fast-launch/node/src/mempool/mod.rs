@@ -244,7 +244,8 @@ impl Mempool {
     }
 
     /// Helper to compute a transaction's reserved contribution per denomination.
-    /// Always accounts for fees/gas in `udgt` and message amounts in their respective denoms.
+    /// Accounts for fees/gas in `udrt` (DRT is the reward/fee token) and message
+    /// amounts in their respective denoms.
     fn reserved_amounts_for_tx(tx: &Transaction) -> HashMap<String, u128> {
         let mut required: HashMap<String, u128> = HashMap::new();
 
@@ -257,9 +258,9 @@ impl Mempool {
             *entry = (*entry).saturating_add(amount);
         };
 
-        // Fees and gas are always denominated in udgt for now.
+        // Fees and gas are denominated in udrt (DRT is the reward/fee token).
         let gas_cost = (tx.gas_limit as u128) * (tx.gas_price as u128);
-        add("udgt", tx.fee.saturating_add(gas_cost));
+        add("udrt", tx.fee.saturating_add(gas_cost));
 
         if let Some(messages) = &tx.messages {
             for message in messages {

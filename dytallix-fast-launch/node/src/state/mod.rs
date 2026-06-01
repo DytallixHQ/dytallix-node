@@ -178,7 +178,7 @@ impl State {
 
         // Subtract amount from sender
         sender.sub_balance(denom, amount)?;
-        // Subtract fee from sender (fees are always in fee_denom, typically "udgt")
+        // Subtract fee from sender (fees are charged in fee_denom; udrt for DRT fees)
         sender.sub_balance(fee_denom, fee)?;
         sender.nonce += 1;
 
