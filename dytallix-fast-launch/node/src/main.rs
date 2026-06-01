@@ -1,4 +1,5 @@
 use axum::{
+    http::{header, HeaderValue, Method},
     routing::{get, post},
     Extension, Router,
 };
@@ -11,7 +12,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::time::interval;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::CorsLayer;
 
 // Replace crate:: module imports with library crate path so binary can access lib modules
 use dytallix_fast_node::alerts::{load_alerts_config, AlertsEngine, NodeMetricsGatherer};
@@ -695,12 +696,28 @@ async fn main() -> anyhow::Result<()> {
         // Asset Registry endpoints
         .route("/asset/register", post(rpc::asset_register))
         .route("/asset/verify", post(rpc::asset_verify))
-        .route("/asset/get", post(rpc::asset_get))
-        // Dev faucet (credits balances directly; for local E2E only)
-        .route("/dev/faucet", post(rpc::dev_faucet))
-        // Ops simulation endpoints (pause/resume producer)
-        .route("/ops/pause", post(rpc::ops_pause))
-        .route("/ops/resume", post(rpc::ops_resume));
+        .route("/asset/get", post(rpc::asset_get));
+
+    // Dev/ops endpoints credit balances directly (/dev/faucet) and pause/resume
+    // block production (/ops/*). They are UNAUTHENTICATED, so exposing them on a
+    // public node lets anyone mint arbitrary balances or halt the chain. They are
+    // therefore disabled unless DYT_ENABLE_DEV_ENDPOINTS=true is explicitly set
+    // (intended for local end-to-end testing only).
+    let dev_endpoints_enabled = std::env::var("DYT_ENABLE_DEV_ENDPOINTS")
+        .ok()
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(false);
+    if dev_endpoints_enabled {
+        eprintln!(
+            "[WARN] Dev endpoints ENABLED (DYT_ENABLE_DEV_ENDPOINTS=true): \
+             /dev/faucet, /ops/pause and /ops/resume are unauthenticated. \
+             Never enable this on a public or production node."
+        );
+        app = app
+            .route("/dev/faucet", post(rpc::dev_faucet))
+            .route("/ops/pause", post(rpc::ops_pause))
+            .route("/ops/resume", post(rpc::ops_resume));
+    }
 
     // WASM contract routes
     #[cfg(feature = "contracts")]
@@ -790,12 +807,31 @@ async fn main() -> anyhow::Result<()> {
 
     app = app.layer(Extension(ctx));
 
-    // Add CORS middleware to allow frontend requests
+    // Add CORS middleware. Origins are restricted to an explicit allow-list
+    // (DYT_CORS_ORIGINS, comma-separated) rather than reflecting any origin, so
+    // untrusted web pages cannot drive the node's state-mutating endpoints from a
+    // visitor's browser. Defaults to local dev origins when unset.
+    let cors_origins: Vec<HeaderValue> = std::env::var("DYT_CORS_ORIGINS")
+        .ok()
+        .map(|raw| {
+            raw.split(',')
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .filter_map(|s| s.parse::<HeaderValue>().ok())
+                .collect::<Vec<_>>()
+        })
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| {
+            vec![
+                HeaderValue::from_static("http://localhost:3000"),
+                HeaderValue::from_static("http://127.0.0.1:3000"),
+            ]
+        });
     app = app.layer(
         CorsLayer::new()
-            .allow_origin(Any)
-            .allow_methods(Any)
-            .allow_headers(Any),
+            .allow_origin(cors_origins)
+            .allow_methods([Method::GET, Method::POST])
+            .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]),
     );
 
     if ws_enabled {

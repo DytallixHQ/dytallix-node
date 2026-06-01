@@ -249,16 +249,11 @@ fn validate_signed_tx(
     expected_nonce: u64,
     account_state: &crate::state::AccountState,
 ) -> Result<(), ValidationError> {
-    // Verify signature (skip in dev mode for testing)
-    let skip_sig_check = std::env::var("DYTALLIX_SKIP_SIG_VERIFY")
-        .ok()
-        .and_then(|v| v.parse::<bool>().ok())
-        .unwrap_or(false);
-
-    if !skip_sig_check && signed_tx.verify().is_err() {
+    // Verify signature. This is always enforced — there is intentionally no
+    // runtime/env-var escape hatch, since one would let a misconfigured node
+    // accept forged or unsigned transactions.
+    if signed_tx.verify().is_err() {
         return Err(ValidationError::InvalidSignature);
-    } else if skip_sig_check {
-        eprintln!("[WARN] Signature verification SKIPPED (DYTALLIX_SKIP_SIG_VERIFY=true)");
     }
 
     // Validate transaction
@@ -1990,7 +1985,7 @@ pub async fn asset_register(
     })))
 }
 
-/// POST /asset/verify - Asset verification stub
+/// POST /asset/verify - Verify that an asset hash is actually anchored on chain.
 pub async fn asset_verify(
     Extension(ctx): Extension<RpcContext>,
     Json(body): Json<serde_json::Value>,
@@ -2012,13 +2007,37 @@ pub async fn asset_verify(
     let asset_hash = params[0].as_str().unwrap_or("unknown");
     let current_height = ctx.storage.height();
 
-    // For now, we'll return success for any asset hash
-    // In a full implementation, this would check against stored asset registry
+    // Verify against the actual on-chain registry instead of trusting the
+    // caller: scan committed block headers for the anchored asset hash.
+    let mut anchored_height: Option<u64> = None;
+    for h in 1..=current_height {
+        if let Some(b) = ctx.storage.get_block_by_height(h) {
+            if b.header.asset_hashes.iter().any(|a| a == asset_hash) {
+                anchored_height = Some(b.header.height);
+                break;
+            }
+        }
+    }
+
+    // Also accept assets registered in this session but not yet sealed into a block.
+    let pending = ctx
+        .pending_assets
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|a| a == asset_hash);
+
+    let verified = anchored_height.is_some() || pending;
     Ok(Json(json!({
-        "verified": true,
+        "verified": verified,
         "asset_hash": asset_hash,
-        "block_height": current_height,
-        "message": "Asset found on chain"
+        "block_height": anchored_height,
+        "pending": pending && anchored_height.is_none(),
+        "message": if verified {
+            "Asset found on chain"
+        } else {
+            "Asset not found on chain"
+        }
     })))
 }
 
