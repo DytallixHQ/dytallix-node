@@ -8,6 +8,7 @@ Includes fee burning mechanism for dual-token economics.
 
 use crate::gas::{intrinsic_gas, Gas, GasError, GasMeter, GasSchedule, TxKind};
 use crate::runtime::fee_burn::FeeBurnEngine;
+use crate::runtime::vesting::VestingModule;
 use crate::state::State;
 use crate::storage::receipts::{TxReceipt, TxStatus, RECEIPT_FORMAT_VERSION};
 use crate::storage::tx::Transaction;
@@ -124,6 +125,7 @@ pub fn execute_transaction(
     tx_index: u32,
     gas_schedule: &GasSchedule,
     fee_burn_engine: Option<&mut FeeBurnEngine>,
+    vesting: &VestingModule,
 ) -> ExecutionResult {
     // If transaction has multiple messages, process them all
     if let Some(messages) = &tx.messages {
@@ -135,6 +137,7 @@ pub fn execute_transaction(
             tx_index,
             gas_schedule,
             fee_burn_engine,
+            vesting,
         );
     }
 
@@ -146,6 +149,7 @@ pub fn execute_transaction(
         tx_index,
         gas_schedule,
         fee_burn_engine,
+        vesting,
     )
 }
 
@@ -158,6 +162,7 @@ fn execute_multi_message_transaction(
     tx_index: u32,
     gas_schedule: &GasSchedule,
     fee_burn_engine: Option<&mut FeeBurnEngine>,
+    vesting: &VestingModule,
 ) -> ExecutionResult {
     // Step 1: Validate basic transaction fields
     if let Err(error) = validate_transaction(tx, state) {
@@ -200,10 +205,15 @@ fn execute_multi_message_transaction(
         }
     };
 
+    // Enforcement point #5: charge the upfront fee against the SPENDABLE udrt
+    // balance. udrt is never vested, so this is a no-op today, but it closes the
+    // class of "pay fees from locked tokens" bypasses for any future locked denom.
     let sender_balance = state.balance_of(&tx.from, "udrt");
-    if sender_balance < upfront_fee {
+    let spendable_fee_balance =
+        state.spendable_balance_of(&tx.from, "udrt", block_height, vesting);
+    if spendable_fee_balance < upfront_fee {
         let err_msg =
-            format!("InsufficientFunds: required {upfront_fee}, available {sender_balance}");
+            format!("InsufficientFunds: required {upfront_fee}, available {spendable_fee_balance}");
         return ExecutionResult {
             receipt: create_failed_receipt(
                 tx,
@@ -286,7 +296,7 @@ fn execute_multi_message_transaction(
 
     // Step 8: Execute each message
     for (idx, msg) in messages.iter().enumerate() {
-        if let Err(e) = execute_message(msg, state, &mut ctx, block_height) {
+        if let Err(e) = execute_message(msg, state, &mut ctx, block_height, vesting) {
             // Out of gas during execution - revert state but keep fee
             ctx.revert_state_changes(state);
             return ExecutionResult {
@@ -334,6 +344,7 @@ fn execute_message(
     state: &mut State,
     ctx: &mut ExecutionContext,
     block_height: u64,
+    vesting: &VestingModule,
 ) -> Result<(), GasError> {
     use crate::storage::tx::TxMessage;
 
@@ -354,12 +365,15 @@ fn execute_message(
             let sender_old_balance = state.balance_of(from, denom);
             let recipient_old_balance = state.balance_of(to, denom);
 
-            // Check sufficient funds
-            if sender_old_balance < *amount {
-                // Note: This shouldn't happen as validation should catch it, but being defensive
+            // Enforcement point #1: check sufficient SPENDABLE funds (total minus
+            // the vesting-locked portion at this height). The debit below still
+            // subtracts from the full balance entry; locked tokens stay put.
+            let spendable =
+                state.spendable_balance_of(from, denom, block_height, vesting);
+            if spendable < *amount {
                 return Err(GasError::OutOfGas {
                     required: *amount as u64,
-                    available: sender_old_balance as u64,
+                    available: spendable as u64,
                 });
             }
 
@@ -422,27 +436,35 @@ fn execute_message(
                 .validate_claim(owner, from, block_height)
                 .map_err(|e| GasError::Custom(e))?;
 
-            // Transfer all funds
+            // Enforcement point #4: sweep only the SPENDABLE portion per denom so
+            // vesting-locked tokens are not drained by a dead-man-switch claim.
+            // The locked remainder stays in the owner's account and continues to
+            // vest on schedule.
             let balances = state.balances_of(owner);
             for (denom, amount) in balances {
-                if amount > 0 {
-                    let owner_old = amount;
-                    let beneficiary_old = state.balance_of(&beneficiary, &denom);
-
-                    let owner_new = 0;
-                    let beneficiary_new = beneficiary_old + amount;
-
-                    ctx.record_state_change(owner.clone(), denom.clone(), owner_old, owner_new);
-                    ctx.record_state_change(
-                        beneficiary.clone(),
-                        denom.clone(),
-                        beneficiary_old,
-                        beneficiary_new,
-                    );
-
-                    state.set_balance(owner, &denom, owner_new);
-                    state.set_balance(&beneficiary, &denom, beneficiary_new);
+                if amount == 0 {
+                    continue;
                 }
+                let sweepable = state.spendable_balance_of(owner, &denom, block_height, vesting);
+                if sweepable == 0 {
+                    continue;
+                }
+                let owner_old = amount;
+                let beneficiary_old = state.balance_of(&beneficiary, &denom);
+
+                let owner_new = owner_old - sweepable;
+                let beneficiary_new = beneficiary_old + sweepable;
+
+                ctx.record_state_change(owner.clone(), denom.clone(), owner_old, owner_new);
+                ctx.record_state_change(
+                    beneficiary.clone(),
+                    denom.clone(),
+                    beneficiary_old,
+                    beneficiary_new,
+                );
+
+                state.set_balance(owner, &denom, owner_new);
+                state.set_balance(&beneficiary, &denom, beneficiary_new);
             }
             Ok(())
         }
@@ -457,6 +479,7 @@ fn execute_single_message_transaction(
     tx_index: u32,
     gas_schedule: &GasSchedule,
     fee_burn_engine: Option<&mut FeeBurnEngine>,
+    vesting: &VestingModule,
 ) -> ExecutionResult {
     // Step 1: Validate basic transaction fields
     if let Err(error) = validate_transaction(tx, state) {
@@ -501,11 +524,14 @@ fn execute_single_message_transaction(
         }
     };
 
+    // Enforcement point #6: charge the upfront fee against SPENDABLE udrt.
     let sender_balance = state.balance_of(&tx.from, "udrt");
+    let spendable_fee_balance =
+        state.spendable_balance_of(&tx.from, "udrt", block_height, vesting);
 
-    if sender_balance < upfront_fee {
+    if spendable_fee_balance < upfront_fee {
         let err_msg =
-            format!("InsufficientFunds: required {upfront_fee}, available {sender_balance}");
+            format!("InsufficientFunds: required {upfront_fee}, available {spendable_fee_balance}");
         return ExecutionResult {
             receipt: create_failed_receipt(
                 tx,
@@ -592,7 +618,7 @@ fn execute_single_message_transaction(
     }
 
     // Step 7: Execute the actual transfer
-    if let Err(_gas_error) = execute_transfer(tx, state, &mut ctx) {
+    if let Err(_gas_error) = execute_transfer(tx, state, &mut ctx, block_height, vesting) {
         // Out of gas during execution - revert state but keep fee
         ctx.revert_state_changes(state);
         return ExecutionResult {

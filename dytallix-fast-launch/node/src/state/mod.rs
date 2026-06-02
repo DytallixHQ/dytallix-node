@@ -1,3 +1,4 @@
+use crate::runtime::vesting::VestingModule;
 use crate::storage::state::Storage;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -281,5 +282,32 @@ impl State {
         } else {
             0
         }
+    }
+
+    /// Spendable balance = total balance minus the vesting-locked portion at
+    /// `height`. This is the value that EVERY balance-sufficiency check must read
+    /// instead of the raw `balance_of`. The actual debit still subtracts from the
+    /// full balance entry; locked tokens physically remain in the account.
+    pub fn spendable_balance_of(
+        &mut self,
+        addr: &str,
+        denom: &str,
+        height: u64,
+        vesting: &VestingModule,
+    ) -> u128 {
+        let total = self.get_account(addr).balance_of(denom);
+        vesting.spendable(total, addr, denom, height)
+    }
+
+    /// Read-only spendable balance that avoids mutating the in-memory caches.
+    pub fn snapshot_spendable_balance(
+        &self,
+        addr: &str,
+        denom: &str,
+        height: u64,
+        vesting: &VestingModule,
+    ) -> u128 {
+        let total = self.snapshot_account(addr).balance_of(denom);
+        vesting.spendable(total, addr, denom, height)
     }
 }
